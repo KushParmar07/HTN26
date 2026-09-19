@@ -21,10 +21,14 @@ async def broadcast_threat_state() -> None:
     """Broadcast current threat state to all connected WebSocket clients."""
     if not connected_websockets:
         return
-    state = pipeline.generate_threat_state()
-    data = state.model_dump_json()
+    try:
+        state = pipeline.generate_threat_state()
+        data = state.model_dump_json()
+    except Exception:
+        return
+
     stale_sockets = set()
-    for ws in connected_websockets:
+    for ws in list(connected_websockets):
         try:
             await ws.send_text(data)
         except Exception:
@@ -42,7 +46,7 @@ async def heartbeat_loop():
             await broadcast_threat_state()
         except asyncio.CancelledError:
             break
-        except Exception as e:
+        except Exception:
             # Continue running ticker despite unexpected broadcast errors
             pass
 
@@ -93,10 +97,13 @@ def get_health() -> Dict[str, Any]:
 @app.post("/api/ingest", tags=["Ingestion"])
 async def ingest_observations(batch: PodObservationBatch) -> Dict[str, Any]:
     """Ingest a batch of Wi-Fi AP observations from an ESP32 sensing pod or simulator."""
-    pipeline.ingest(batch)
-    # Broadcast updated threat state with zero latency
-    await broadcast_threat_state()
-    return {"status": "accepted", "pod_id": batch.pod_id, "count": len(batch.observations)}
+    try:
+        pipeline.ingest(batch)
+        # Broadcast updated threat state with zero latency
+        await broadcast_threat_state()
+        return {"status": "accepted", "pod_id": batch.pod_id, "count": len(batch.observations)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Ingestion failed: {str(e)}")
 
 
 @app.get("/api/threats", response_model=ThreatStateResponse, tags=["Threat State"])
@@ -153,9 +160,9 @@ async def websocket_threats(websocket: WebSocket):
             msg = await websocket.receive_text()
             if msg.strip().lower() == "ping":
                 await websocket.send_text(json.dumps({"type": "pong"}))
-    except WebSocketDisconnect:
-        connected_websockets.discard(websocket)
-    except Exception:
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
         connected_websockets.discard(websocket)
 
 

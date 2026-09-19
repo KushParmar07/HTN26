@@ -1,7 +1,7 @@
 """Access Point state tracking per BSSID across distributed sensor pods."""
 
 import time
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 from backend.app.models.observation import PodObservationBatch, SingleObservation
 from backend.app.models.threat import Position2D
 from backend.app.state.filter import CompositeRssiFilter
@@ -43,6 +43,7 @@ class APState:
         # Smoothed 2D spatial tracking
         self.estimated_pos: Optional[Position2D] = None
         self.uncertainty_radius_m: Optional[float] = None
+        self.last_pos_update_ms: Optional[int] = None
 
     def update_pod_observation(
         self, pod_id: str, obs: SingleObservation, received_at_ms: int
@@ -72,14 +73,27 @@ class APState:
         self.pod_filters[pod_id].update(float(obs.rssi))
 
     def update_estimated_position(
-        self, raw_pos: Optional[Position2D], raw_uncertainty: Optional[float]
-    ) -> tuple[Optional[Position2D], Optional[float]]:
+        self,
+        raw_pos: Optional[Position2D],
+        raw_uncertainty: Optional[float],
+        now_ms: Optional[int] = None,
+        pos_ttl_ms: int = 15000,
+    ) -> Tuple[Optional[Position2D], Optional[float]]:
         """
         Apply temporal exponential smoothing to 2D coordinates and uncertainty
         to eliminate high-frequency spatial jitter for VR rendering.
+        If no fresh position is computed within pos_ttl_ms, clear the stale position.
         """
+        current_time = now_ms if now_ms is not None else int(time.time() * 1000)
+
         if raw_pos is None:
+            # Check if previous position has expired
+            if self.last_pos_update_ms is not None and (current_time - self.last_pos_update_ms) > pos_ttl_ms:
+                self.estimated_pos = None
+                self.uncertainty_radius_m = None
             return self.estimated_pos, self.uncertainty_radius_m
+
+        self.last_pos_update_ms = current_time
 
         if self.estimated_pos is None or self.uncertainty_radius_m is None:
             self.estimated_pos = raw_pos
@@ -133,6 +147,15 @@ class APStateManager:
     ) -> List[APState]:
         """Ingest a batch from a pod, creating or updating AP states."""
         now_ms = received_at_ms if received_at_ms is not None else int(time.time() * 1000)
+
+        # Validate timestamp: if batch timestamp is missing, zero, or wildly out of sync
+        # with server wall clock (e.g. ESP32 uptime ms), bind to server arrival time.
+        effective_ts = now_ms
+        if batch.timestamp_ms is not None and batch.timestamp_ms > 0:
+            # If timestamp looks like a plausible epoch timestamp (within 5 minutes of server)
+            if abs(now_ms - batch.timestamp_ms) < 300_000:
+                effective_ts = batch.timestamp_ms
+
         updated: List[APState] = []
 
         for obs in batch.observations:
@@ -140,7 +163,7 @@ class APStateManager:
                 self.aps[obs.bssid] = APState(
                     bssid=obs.bssid,
                     ssid=obs.ssid,
-                    initial_seen_ms=now_ms,
+                    initial_seen_ms=effective_ts,
                     channel=obs.channel,
                     authmode=obs.authmode,
                     median_window=self.median_window,
@@ -148,7 +171,7 @@ class APStateManager:
                     spatial_ema_alpha=self.spatial_ema_alpha,
                 )
             ap = self.aps[obs.bssid]
-            ap.update_pod_observation(batch.pod_id, obs, now_ms)
+            ap.update_pod_observation(batch.pod_id, obs, effective_ts)
             updated.append(ap)
 
         return updated

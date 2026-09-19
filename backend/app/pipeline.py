@@ -67,7 +67,7 @@ class BackendPipeline:
 
             # Apply temporal spatial smoothing to prevent VR jitter
             smooth_pos_2d, smooth_uncertainty = ap.update_estimated_position(
-                raw_pos=raw_pos_2d, raw_uncertainty=raw_uncertainty
+                raw_pos=raw_pos_2d, raw_uncertainty=raw_uncertainty, now_ms=now_ms
             )
 
             # Include any AP that is classified as suspicious or meets risk threshold

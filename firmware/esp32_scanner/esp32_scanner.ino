@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <esp_mac.h>
 
 // =============================================================================
 // Configuration Constants
@@ -10,7 +11,7 @@ const char* WIFI_SSID     = "KUSH-PC 3059";
 const char* WIFI_PASSWORD = "08c0C92%";
 const char* BACKEND_HOST  = "192.168.137.1";
 const int   BACKEND_PORT  = 8000;
-const char* POD_ID        = "pod_a";
+const char* POD_ID        = "pod_c";
 
 // Delay between successive scan/ingest cycles (ms)
 const unsigned long CYCLE_DELAY_MS = 2500;
@@ -80,7 +81,8 @@ String escapeJsonString(const String& input) {
       output += "\\r";
     } else if (c == '\t') {
       output += "\\t";
-    } else if ((uint8_t)c >= 32 && (uint8_t)c <= 126) {
+    } else if ((uint8_t)c >= 32) {
+      // Preserve all printable ASCII and all valid UTF-8 multibyte characters (128-255)
       output += c;
     }
   }
@@ -92,7 +94,7 @@ bool connectToTransportNetwork() {
     return true;
   }
 
-  Serial.printf("[WIFI] Connecting to '%s'...\n", WIFI_SSID);
+  Serial.printf("[WIFI] Associating with transport network '%s'...\n", WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   unsigned long start = millis();
@@ -126,7 +128,7 @@ void setup() {
   Serial.println("==================================================");
   Serial.println("[RF-THREAT-DETECTION] ESP32-U Live Ingest Client");
   Serial.println("Hardware: ESP32-U Dev Board w/ 3dBi Antenna");
-  Serial.println("Stage: Stage 5 Physical Sensor to Backend Ingestion");
+  Serial.println("Stage: Production Hardware Ingest Client");
   Serial.printf("Config: Pod ID='%s' | Backend=http://%s:%d/api/ingest\n",
                 POD_ID, BACKEND_HOST, BACKEND_PORT);
   Serial.println("==================================================");
@@ -134,6 +136,16 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   delay(200);
+
+  uint8_t baseMac[6];
+  esp_err_t ret = esp_efuse_mac_get_default(baseMac);
+  String staMac = WiFi.macAddress();
+  if (ret == ESP_OK) {
+    Serial.printf("[HW_IDENTITY] EFUSE Base MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                  baseMac[0], baseMac[1], baseMac[2], baseMac[3], baseMac[4], baseMac[5]);
+  }
+  Serial.printf("[HW_IDENTITY] WiFi STA MAC:   %s\n", staMac.c_str());
+  Serial.printf("[HW_IDENTITY] Active POD_ID:  %s\n", POD_ID);
 }
 
 void loop() {
@@ -142,7 +154,7 @@ void loop() {
   Serial.printf("[CYCLE #%lu] Starting passive RF scan... (Heap: %u bytes)\n",
                 scanCycle, ESP.getFreeHeap());
 
-  // 1. Perform passive Wi-Fi scan across all 2.4 GHz channels
+  // 1. Perform passive Wi-Fi scan across all 2.4 GHz channels (including hidden)
   unsigned long scanStartMs = millis();
   int16_t n = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/true);
   unsigned long scanDurationMs = millis() - scanStartMs;
@@ -200,7 +212,7 @@ void loop() {
   }
   jsonPayload += "]}";
 
-  // Free scan memory before HTTP transmission
+  // Free scan memory before network transmission
   WiFi.scanDelete();
 
   // 3. Connect to transport network
@@ -225,12 +237,22 @@ void loop() {
   int httpCode = http.POST(jsonPayload);
   unsigned long postDurationMs = millis() - postStartMs;
 
-  if (httpCode > 0) {
+  if (httpCode == 200) {
     String responseBody = http.getString();
-    Serial.printf("[HTTP SUCCESS] Code: %d (in %lu ms) | Response: %s\n",
+    if (responseBody.indexOf("\"status\":\"accepted\"") >= 0) {
+      Serial.printf("[INGEST SUCCESS] Ingested %d APs in %lu ms | Response: %s\n",
+                    n, postDurationMs, responseBody.c_str());
+      Serial.printf("[HW_IDENTITY] Pod: %s | WiFi MAC: %s\n", POD_ID, WiFi.macAddress().c_str());
+    } else {
+      Serial.printf("[INGEST UNEXPECTED] Code 200 but unexpected payload: %s\n",
+                    responseBody.c_str());
+    }
+  } else if (httpCode > 0) {
+    String responseBody = http.getString();
+    Serial.printf("[INGEST REJECTED] HTTP %d (in %lu ms) | Error: %s\n",
                   httpCode, postDurationMs, responseBody.c_str());
   } else {
-    Serial.printf("[HTTP FAILED] Error: %s (code %d in %lu ms)\n",
+    Serial.printf("[HTTP ERROR] Transport failed: %s (code %d in %lu ms)\n",
                   http.errorToString(httpCode).c_str(), httpCode, postDurationMs);
   }
 

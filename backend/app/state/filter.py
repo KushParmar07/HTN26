@@ -1,7 +1,7 @@
 """RSSI temporal filtering implementations (Rolling Median & EMA)."""
 
 from collections import deque
-from typing import List, Optional
+from typing import Optional
 import numpy as np
 
 
@@ -15,7 +15,10 @@ class RollingMedianFilter:
         self._history: deque[float] = deque(maxlen=window_size)
 
     def update(self, value: float) -> float:
-        self._history.append(value)
+        # Protect against non-finite values (NaN / Inf)
+        if not np.isfinite(value):
+            return self.current_value if self.current_value is not None else -65.0
+        self._history.append(float(value))
         return float(np.median(self._history))
 
     @property
@@ -43,6 +46,9 @@ class ExponentialMovingAverageFilter:
         self._sample_count: int = 0
 
     def update(self, value: float) -> float:
+        # Protect against non-finite values (NaN / Inf)
+        if not np.isfinite(value):
+            return self._value if self._value is not None else -65.0
         self._sample_count += 1
         if self._value is None:
             self._value = float(value)

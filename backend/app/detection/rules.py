@@ -69,7 +69,8 @@ class DeterministicDetector:
                 raw_score += self.weights.unexpected_channel
 
             # Check sudden appearance
-            if (current_time_ms - ap.first_seen_ms) <= self.sudden_appearance_threshold_ms:
+            elapsed_ms = max(0, current_time_ms - ap.first_seen_ms)
+            if elapsed_ms <= self.sudden_appearance_threshold_ms:
                 flags.append(EvidenceFlag.SUDDEN_APPEARANCE)
                 raw_score += self.weights.sudden_appearance
 
@@ -83,7 +84,8 @@ class DeterministicDetector:
 
         # Unrelated third-party AP (different SSID, unknown BSSID)
         # We monitor it neutrally; check if sudden appearance
-        if (current_time_ms - ap.first_seen_ms) <= self.sudden_appearance_threshold_ms:
+        elapsed_ms = max(0, current_time_ms - ap.first_seen_ms)
+        if elapsed_ms <= self.sudden_appearance_threshold_ms:
             flags.append(EvidenceFlag.SUDDEN_APPEARANCE)
             raw_score += (self.weights.sudden_appearance * 0.5)  # attenuated for non-matching SSIDs
 
