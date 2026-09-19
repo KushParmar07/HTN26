@@ -3,8 +3,11 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using Unity.XR.CoreUtils;
 using RFThreatDetection.Dev;
+using RFThreatDetection.Interaction;
 using RFThreatDetection.Network;
+using RFThreatDetection.Presentation;
 using RFThreatDetection.Spatial;
 using RFThreatDetection.Visualization;
 
@@ -12,7 +15,7 @@ namespace RFThreatDetection.Editor
 {
     /// <summary>
     /// Editor helper to programmatically generate or configure the main threat visualization demo scene.
-    /// Developer 2 can simply run this menu command after importing the project into Unity 6.3 LTS.
+    /// Rebuilds the complete demo scene after importing the project into Unity 6.
     /// </summary>
     public static class SceneSetupHelper
     {
@@ -31,8 +34,14 @@ namespace RFThreatDetection.Editor
             // Create new empty scene or edit current scene
             Scene currentScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
-            // 1. Setup Main Camera
+            // 1. Setup an OpenXR-ready camera hierarchy.
+            GameObject xrOriginObj = new GameObject("XR Origin");
+            XROrigin xrOrigin = xrOriginObj.AddComponent<XROrigin>();
+            GameObject cameraOffsetObj = new GameObject("Camera Offset");
+            cameraOffsetObj.transform.SetParent(xrOriginObj.transform, false);
+
             GameObject cameraObj = new GameObject("Main Camera");
+            cameraObj.transform.SetParent(cameraOffsetObj.transform, false);
             cameraObj.tag = "MainCamera";
             Camera cam = cameraObj.AddComponent<Camera>();
             cam.clearFlags = CameraClearFlags.SolidColor;
@@ -42,8 +51,15 @@ namespace RFThreatDetection.Editor
             cameraObj.AddComponent<AudioListener>();
             
             // Position camera looking at the demo room space
-            cameraObj.transform.position = new Vector3(2.0f, 1.6f, -1.0f);
-            cameraObj.transform.rotation = Quaternion.Euler(15f, 0f, 0f);
+            cameraObj.transform.localPosition = new Vector3(2.0f, 1.6f, -1.0f);
+            cameraObj.transform.localRotation = Quaternion.Euler(15f, 0f, 0f);
+
+            xrOrigin.Origin = xrOriginObj;
+            xrOrigin.CameraFloorOffsetObject = cameraOffsetObj;
+            xrOrigin.Camera = cam;
+            xrOrigin.RequestedTrackingOriginMode = XROrigin.TrackingOriginMode.Floor;
+            xrOrigin.CameraYOffset = 0f;
+            xrOriginObj.AddComponent<QuestXRBootstrap>();
 
             // 2. Setup Directional Light
             GameObject lightObj = new GameObject("Directional Light");
@@ -64,21 +80,17 @@ namespace RFThreatDetection.Editor
             ThreatVisualizationManager vizManager = rfSystemObj.AddComponent<ThreatVisualizationManager>();
             QuestPassthroughManager passthroughManager = rfSystemObj.AddComponent<QuestPassthroughManager>();
             QuestDevTestRunner devRunner = rfSystemObj.AddComponent<QuestDevTestRunner>();
+            RoomCalibrationController calibration = rfSystemObj.AddComponent<RoomCalibrationController>();
+            SpatialThreatDashboard dashboard = rfSystemObj.AddComponent<SpatialThreatDashboard>();
+            ThreatFocusController focusController = rfSystemObj.AddComponent<ThreatFocusController>();
 
             // Save the scene
             EditorSceneManager.SaveScene(currentScene, ScenePath);
+            EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
             Debug.Log($"[SceneSetupHelper] Successfully built and saved demo scene to '{ScenePath}'!");
-            if (!Application.isBatchMode)
-            {
-                EditorUtility.DisplayDialog(
-                    "RF Threat Detection Scene Setup",
-                    $"Demo scene created successfully at:\n{ScenePath}\n\nYou can now press Play in the Unity Editor to test with mock threat data, or connect to the running Python backend via 'ws://127.0.0.1:8000/ws/threats'.",
-                    "OK"
-                );
-            }
         }
     }
 }

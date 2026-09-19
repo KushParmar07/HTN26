@@ -14,7 +14,7 @@ using RFThreatDetection.Visualization;
 namespace RFThreatDetection.Editor
 {
     /// <summary>
-    /// Automated batchmode and Play Mode verification for Unity 6.3 LTS migration.
+    /// Automated batchmode and Play Mode verification for Unity 6.
     /// Verifies scene setup, coordinate transformation, passthrough configuration,
     /// sensor node visualization, and moving threat tracking.
     /// </summary>
@@ -28,7 +28,7 @@ namespace RFThreatDetection.Editor
         public static void RunVerification()
         {
             Debug.Log("=================================================");
-            Debug.Log("[VERIFICATION] Starting Unity 6.3 LTS Migration Verification");
+            Debug.Log("[VERIFICATION] Starting Unity 6 Verification");
             Debug.Log("=================================================");
 
             try
@@ -136,7 +136,7 @@ namespace RFThreatDetection.Editor
                 TextMesh hudText = threatObj.GetComponentInChildren<TextMesh>();
                 if (hudText == null) throw new Exception("Billboard TextMesh missing on threat volume!");
                 Debug.Log($"[VERIFICATION] Billboard HUD Text:\n{hudText.text}");
-                if (!hudText.text.Contains("[THREAT DETECTED]") || !hudText.text.Contains("HTN-Secure"))
+                if (!hudText.text.Contains("RISK") || !hudText.text.Contains("HTN-Secure"))
                     throw new Exception("Billboard HUD text content mismatch!");
                 Debug.Log("[VERIFICATION] [PASS] ThreatVolumeController correctly received moving coordinates and updated billboard HUD.");
 
@@ -152,7 +152,7 @@ namespace RFThreatDetection.Editor
                 Debug.Log("[VERIFICATION] [PASS] Threat clearance handled cleanly.");
 
                 // Step 8: Enter Play Mode
-                Debug.Log("[VERIFICATION] Entering Unity 6.3 Play Mode...");
+                Debug.Log("[VERIFICATION] Entering Unity 6 Play Mode...");
                 Directory.CreateDirectory("Temp");
                 File.WriteAllText(FlagFilePath, "active");
                 EditorApplication.EnterPlaymode();
@@ -183,7 +183,7 @@ namespace RFThreatDetection.Editor
             playModeFrameCount++;
             if (playModeFrameCount == 1)
             {
-                Debug.Log($"[VERIFICATION] [PASS] Executing frame {playModeFrameCount} in active Unity 6.3 Play Mode!");
+                Debug.Log($"[VERIFICATION] [PASS] Executing frame {playModeFrameCount} in active Unity 6 Play Mode!");
             }
 
             if (playModeFrameCount >= 20)
@@ -192,7 +192,7 @@ namespace RFThreatDetection.Editor
                 try { File.Delete(FlagFilePath); } catch {}
                 Debug.Log($"[VERIFICATION] [PASS] Completed {playModeFrameCount} frames in Unity 6.3 Play Mode successfully!");
                 Debug.Log("=================================================");
-                Debug.Log("[VERIFICATION] ALL TESTS PASSED SUCCESSFULLY IN UNITY 6.3!");
+                Debug.Log("[VERIFICATION] ALL TESTS PASSED SUCCESSFULLY IN UNITY 6!");
                 Debug.Log("=================================================");
                 EditorApplication.ExitPlaymode();
                 if (Application.isBatchMode)

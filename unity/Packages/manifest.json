@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "com.coplaydev.unity-mcp": "https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#v10.0.0",
     "com.unity.feature.vr": "1.0.1",
     "com.unity.ugui": "2.0.0"
   }
