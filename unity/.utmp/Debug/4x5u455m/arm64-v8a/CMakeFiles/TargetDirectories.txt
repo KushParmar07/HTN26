@@ -1,0 +1,8 @@
+C:/Users/adria/Desktop/code_n_shit/HTN_2026/HTN26/unity/.utmp/Debug/4x5u455m/arm64-v8a/CMakeFiles/edit_cache.dir
+C:/Users/adria/Desktop/code_n_shit/HTN_2026/HTN26/unity/.utmp/Debug/4x5u455m/arm64-v8a/CMakeFiles/rebuild_cache.dir
+C:/Users/adria/Desktop/code_n_shit/HTN_2026/HTN26/unity/.utmp/Debug/4x5u455m/arm64-v8a/GameActivity/CMakeFiles/game.dir
+C:/Users/adria/Desktop/code_n_shit/HTN_2026/HTN26/unity/.utmp/Debug/4x5u455m/arm64-v8a/GameActivity/CMakeFiles/edit_cache.dir
+C:/Users/adria/Desktop/code_n_shit/HTN_2026/HTN26/unity/.utmp/Debug/4x5u455m/arm64-v8a/GameActivity/CMakeFiles/rebuild_cache.dir
+C:/Users/adria/Desktop/code_n_shit/HTN_2026/HTN26/unity/.utmp/Debug/4x5u455m/arm64-v8a/FramePacing/CMakeFiles/swappywrapper.dir
+C:/Users/adria/Desktop/code_n_shit/HTN_2026/HTN26/unity/.utmp/Debug/4x5u455m/arm64-v8a/FramePacing/CMakeFiles/edit_cache.dir
+C:/Users/adria/Desktop/code_n_shit/HTN_2026/HTN26/unity/.utmp/Debug/4x5u455m/arm64-v8a/FramePacing/CMakeFiles/rebuild_cache.dir

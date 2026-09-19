@@ -35,9 +35,13 @@ namespace RFThreatDetection.Visualization
         private Renderer outerRenderer;
         private Renderer coreRenderer;
         private float currentRiskScore = 0f;
+        private ThreatItemData latestData;
+        private bool isFocused;
+        private bool isSelected;
 
         public string ThreatId => threatId;
         public string Bssid => bssid;
+        public ThreatItemData LatestData => latestData;
 
         private void Awake()
         {
@@ -55,19 +59,33 @@ namespace RFThreatDetection.Visualization
             this.bssid = data.bssid;
             this.ssid = data.ssid;
             this.currentRiskScore = data.risk_score;
+            this.latestData = data;
             this.targetPosition = worldPosition;
 
             // Uncertainty radius in meters determines the volumetric diameter
             float radius = data.uncertainty_radius_m > 0.05f ? data.uncertainty_radius_m : 0.5f;
-            float diameter = radius * 2.0f;
+            float diameter = Mathf.Clamp(radius, 0.25f, 2.0f) * 2.0f;
             this.targetScale = new Vector3(diameter, diameter, diameter);
 
             // Compute color based on normalized risk (40..100)
             float t = Mathf.Clamp01((data.risk_score - 40.0f) / 60.0f);
             this.currentColor = Color.Lerp(lowRiskColor, highRiskColor, t);
 
-            UpdateMaterialColors(currentColor);
+            RefreshVisualState();
             UpdateBillboardText(data);
+        }
+
+        public void SetFocused(bool focused)
+        {
+            isFocused = focused;
+            RefreshVisualState();
+        }
+
+        public void SetSelected(bool selected)
+        {
+            isSelected = selected;
+            RefreshVisualState();
+            if (latestData != null) UpdateBillboardText(latestData);
         }
 
         private void Update()
@@ -106,13 +124,20 @@ namespace RFThreatDetection.Visualization
         {
             if (billboardText == null) return;
 
-            string flags = data.GetFormattedEvidenceFlags();
-            billboardText.text = $"<b><color=red>[THREAT DETECTED]</color></b>\n" +
-                                 $"<b>SSID:</b> {data.ssid}\n" +
-                                 $"<b>BSSID:</b> {data.bssid}\n" +
-                                 $"<b>Risk:</b> {data.risk_score:F0}%\n" +
-                                 $"<b>Flags:</b> {flags}\n" +
-                                 $"<b>Uncertainty:</b> ±{data.uncertainty_radius_m:F2}m";
+            string selectedMarker = isSelected ? "  <color=#FFFFFF>[SELECTED]</color>" : string.Empty;
+            billboardText.text = $"<b><color=#FF5A55>{data.ssid}</color></b>{selectedMarker}\n" +
+                                 $"RISK {data.risk_score:F0}   +/- {data.uncertainty_radius_m:F2} m";
+        }
+
+        private void RefreshVisualState()
+        {
+            Color visualColor = currentColor;
+            if (isSelected)
+                visualColor = Color.Lerp(visualColor, Color.white, 0.42f);
+            else if (isFocused)
+                visualColor = Color.Lerp(visualColor, new Color(1f, 0.75f, 0.2f, visualColor.a), 0.35f);
+
+            UpdateMaterialColors(visualColor);
         }
 
         private void UpdateMaterialColors(Color color)
@@ -160,8 +185,8 @@ namespace RFThreatDetection.Visualization
                 outer.name = "VolumeCloud";
                 outer.transform.SetParent(this.transform, false);
                 outer.transform.localPosition = Vector3.zero;
-                Collider col = outer.GetComponent<Collider>();
-                SafeDestroy(col);
+                SphereCollider col = outer.GetComponent<SphereCollider>();
+                if (col != null) col.isTrigger = true;
 
                 outerRenderer = outer.GetComponent<Renderer>();
                 if (outerRenderer != null)
@@ -210,7 +235,7 @@ namespace RFThreatDetection.Visualization
 
                 billboardText = textObj.AddComponent<TextMesh>();
                 billboardText.fontSize = 24;
-                billboardText.characterSize = 0.035f;
+                billboardText.characterSize = 0.022f;
                 billboardText.anchor = TextAnchor.LowerCenter;
                 billboardText.alignment = TextAlignment.Center;
                 billboardText.color = Color.white;
