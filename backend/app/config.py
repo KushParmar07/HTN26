@@ -1,6 +1,6 @@
 """System configuration, sensor coordinates, and detection rule weights."""
 
-from typing import Dict, List, Set
+from typing import List, Set
 from pydantic import BaseModel, Field
 
 
@@ -56,10 +56,19 @@ class SystemConfig(BaseModel):
     path_loss_reference_rssi: float = -45.0  # RSSI at 1 meter (dBm)
     path_loss_exponent: float = 2.7          # Path loss exponent n
 
-    # Temporal filtering
+    # Temporal RSSI filtering
     median_window: int = 5
     ema_alpha: float = 0.3
     stale_ap_ttl_ms: int = 20000             # 20 seconds
+
+    # Spatial position temporal smoothing (1.0 = direct from filtered RSSI)
+    spatial_smoothing_alpha: float = 1.0
+
+    # Development & test endpoint gating
+    enable_dev_endpoints: bool = True
+
+    # WebSocket heartbeat & state sync interval
+    websocket_heartbeat_interval_s: float = 1.0
 
 
 # Global default instance

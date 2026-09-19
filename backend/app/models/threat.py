@@ -2,7 +2,7 @@
 
 from enum import Enum
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 
 class ThreatStatus(str, Enum):
@@ -39,8 +39,12 @@ class SensorNodeInfo(BaseModel):
 
 
 class ThreatItem(BaseModel):
-    """Active threat entry representing an access point."""
+    """Active threat entry representing an access point for 3D/VR rendering."""
 
+    threat_id: str = Field(
+        default="",
+        description="Stable unique threat identifier for 3D/VR object tracking",
+    )
     bssid: str = Field(..., description="Transmitter MAC address")
     ssid: str = Field(default="", description="Observed SSID")
     status: ThreatStatus = Field(..., description="Threat classification status")
@@ -54,10 +58,28 @@ class ThreatItem(BaseModel):
     uncertainty_radius_m: Optional[float] = Field(
         default=None, ge=0.0, description="Estimated 1-sigma uncertainty radius in meters"
     )
+    channel: Optional[int] = Field(
+        default=None, description="Current operating Wi-Fi channel"
+    )
+    authmode: Optional[str] = Field(
+        default=None, description="Observed authentication/security mode"
+    )
+    first_seen_ms: Optional[int] = Field(
+        default=None, description="Unix timestamp ms when AP was first observed"
+    )
     last_seen_ms: int = Field(..., description="Unix timestamp ms when AP was last observed")
     observed_by_pods: List[str] = Field(
         default_factory=list, description="List of pods that observed this AP in the active window"
     )
+
+    @model_validator(mode="after")
+    def populate_defaults(self) -> "ThreatItem":
+        if not self.threat_id:
+            clean_bssid = self.bssid.replace(":", "").lower()
+            self.threat_id = f"threat_{clean_bssid}"
+        if self.first_seen_ms is None:
+            self.first_seen_ms = self.last_seen_ms
+        return self
 
 
 class ThreatStateResponse(BaseModel):
@@ -71,3 +93,9 @@ class ThreatStateResponse(BaseModel):
     threats: List[ThreatItem] = Field(
         default_factory=list, description="List of active detected threats"
     )
+
+    @computed_field
+    @property
+    def active_threats(self) -> List[ThreatItem]:
+        """Convenience alias for VR clients expecting active_threats."""
+        return self.threats

@@ -3,6 +3,7 @@
 import time
 from typing import Dict, List, Optional, Set
 from backend.app.models.observation import PodObservationBatch, SingleObservation
+from backend.app.models.threat import Position2D
 from backend.app.state.filter import CompositeRssiFilter
 
 
@@ -18,6 +19,7 @@ class APState:
         authmode: str,
         median_window: int = 5,
         ema_alpha: float = 0.3,
+        spatial_ema_alpha: float = 0.35,
     ):
         self.bssid = bssid
         self.ssid = ssid
@@ -31,11 +33,16 @@ class APState:
         # Filter settings
         self.median_window = median_window
         self.ema_alpha = ema_alpha
+        self.spatial_ema_alpha = spatial_ema_alpha
 
         # Per-pod tracking
         self.pod_filters: Dict[str, CompositeRssiFilter] = {}
         self.pod_last_rssi_raw: Dict[str, int] = {}
         self.pod_last_seen_ms: Dict[str, int] = {}
+
+        # Smoothed 2D spatial tracking
+        self.estimated_pos: Optional[Position2D] = None
+        self.uncertainty_radius_m: Optional[float] = None
 
     def update_pod_observation(
         self, pod_id: str, obs: SingleObservation, received_at_ms: int
@@ -64,6 +71,31 @@ class APState:
         self.pod_last_seen_ms[pod_id] = received_at_ms
         self.pod_filters[pod_id].update(float(obs.rssi))
 
+    def update_estimated_position(
+        self, raw_pos: Optional[Position2D], raw_uncertainty: Optional[float]
+    ) -> tuple[Optional[Position2D], Optional[float]]:
+        """
+        Apply temporal exponential smoothing to 2D coordinates and uncertainty
+        to eliminate high-frequency spatial jitter for VR rendering.
+        """
+        if raw_pos is None:
+            return self.estimated_pos, self.uncertainty_radius_m
+
+        if self.estimated_pos is None or self.uncertainty_radius_m is None:
+            self.estimated_pos = raw_pos
+            self.uncertainty_radius_m = raw_uncertainty
+        else:
+            alpha = self.spatial_ema_alpha
+            smooth_x = alpha * raw_pos.x + (1.0 - alpha) * self.estimated_pos.x
+            smooth_y = alpha * raw_pos.y + (1.0 - alpha) * self.estimated_pos.y
+            self.estimated_pos = Position2D(x=round(smooth_x, 3), y=round(smooth_y, 3))
+
+            if raw_uncertainty is not None:
+                smooth_u = alpha * raw_uncertainty + (1.0 - alpha) * self.uncertainty_radius_m
+                self.uncertainty_radius_m = round(smooth_u, 3)
+
+        return self.estimated_pos, self.uncertainty_radius_m
+
     def get_filtered_rssi(self, pod_id: str) -> Optional[float]:
         """Get the current smoothed RSSI value for a pod."""
         filt = self.pod_filters.get(pod_id)
@@ -75,7 +107,7 @@ class APState:
         """Get list of pods that have observed this AP within max_age_ms."""
         active = []
         for pod_id, last_seen in self.pod_last_seen_ms.items():
-            if (now_ms - last_seen) <= max_age_ms:
+            if abs(now_ms - last_seen) <= max_age_ms:
                 active.append(pod_id)
         return sorted(active)
 
@@ -88,10 +120,12 @@ class APStateManager:
         stale_ttl_ms: int = 30000,
         median_window: int = 5,
         ema_alpha: float = 0.3,
+        spatial_ema_alpha: float = 0.35,
     ):
         self.stale_ttl_ms = stale_ttl_ms
         self.median_window = median_window
         self.ema_alpha = ema_alpha
+        self.spatial_ema_alpha = spatial_ema_alpha
         self.aps: Dict[str, APState] = {}
 
     def ingest_batch(
@@ -111,6 +145,7 @@ class APStateManager:
                     authmode=obs.authmode,
                     median_window=self.median_window,
                     ema_alpha=self.ema_alpha,
+                    spatial_ema_alpha=self.spatial_ema_alpha,
                 )
             ap = self.aps[obs.bssid]
             ap.update_pod_observation(batch.pod_id, obs, now_ms)

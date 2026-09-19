@@ -61,10 +61,11 @@
   ],
   "threats": [
     {
+      "threat_id": "threat_deadbeef0001",
       "bssid": "DE:AD:BE:EF:00:01",
       "ssid": "HTN-Secure",
       "status": "SUSPICIOUS_INFRASTRUCTURE",
-      "risk_score": 85.0,
+      "risk_score": 100.0,
       "evidence_flags": [
         "UNKNOWN_BSSID",
         "SECURITY_MISMATCH",
@@ -76,10 +77,14 @@
         "y": 1.20
       },
       "uncertainty_radius_m": 0.55,
+      "channel": 1,
+      "authmode": "OPEN",
+      "first_seen_ms": 1726729200000,
       "last_seen_ms": 1726729205000,
       "observed_by_pods": ["pod_a", "pod_b", "pod_c"]
     }
-  ]
+  ],
+  "active_threats": [...]
 }
 ```
 
@@ -90,14 +95,19 @@
 | `version` | `string` | Protocol version (`"1.0"`). |
 | `generated_at_ms` | `integer` | Backend Unix epoch timestamp in ms when state was computed. |
 | `sensor_nodes` | `list[object]` | Known positions of the 3 physical ESP32 sensing pods. |
-| `threats` | `list[object]` | List of currently active detected threats (`risk_score > threshold`). |
+| `threats` | `list[object]` | List of currently active detected threats (`risk_score >= threshold`). |
+| `active_threats` | `list[object]` | Alias for `threats` for VR clients expecting active_threats field. |
+| `threats[].threat_id` | `string` | Unique stable identifier (e.g. `"threat_deadbeef0001"`) for binding VR GameObjects/particles. |
 | `threats[].bssid` | `string` | Normalized BSSID of the suspicious AP. |
 | `threats[].ssid` | `string` | SSID of the suspicious AP. |
 | `threats[].status` | `string` | `"SUSPICIOUS_INFRASTRUCTURE"` or `"AUTHORIZED"` or `"MONITORED"`. |
 | `threats[].risk_score` | `float` | Bounded risk score from `0.0` to `100.0`. |
 | `threats[].evidence_flags` | `list[string]` | Human-readable explainability flags triggering the risk score. |
-| `threats[].estimated_position_2d` | `object` or `null` | Calculated 2D coordinate `{ "x": float, "y": float }` in meters. `null` if $<3$ pods have observed it. |
-| `threats[].uncertainty_radius_m` | `float` or `null` | 1-sigma uncertainty radius in meters. Scales visual threat cloud volume. |
+| `threats[].estimated_position_2d` | `object` or `null` | Smoothed 2D coordinates `{ "x": float, "y": float }` in meters. `null` if $<3$ pods have observed it. |
+| `threats[].uncertainty_radius_m` | `float` or `null` | 1-sigma uncertainty radius in meters. Controls VR threat volume radius. |
+| `threats[].channel` | `integer` or `null` | Current Wi-Fi channel (e.g. 1) for HUD inspection. |
+| `threats[].authmode` | `string` or `null` | Current security mode (e.g. `"OPEN"`) for HUD inspection. |
+| `threats[].first_seen_ms` | `integer` | Unix timestamp ms when AP was first observed. |
 | `threats[].last_seen_ms` | `integer` | Unix timestamp ms when any pod last observed this BSSID. |
 | `threats[].observed_by_pods` | `list[string]` | Pod IDs that have observed this transmitter in the active time window. |
 
