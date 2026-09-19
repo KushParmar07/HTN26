@@ -1,6 +1,6 @@
-# Meta Quest Pro Spatial Visualization Client
+# Meta Quest Pro Spatial Visualization Client (Unity 6.3 LTS)
 
-This folder contains the standalone Unity project for the **Meta Quest Pro** spatial RF threat visualization client.
+This folder contains the standalone Unity project for the **Meta Quest Pro** spatial RF threat visualization client, targeting **Unity 6.3 LTS** (`6000.6.2f1`).
 
 ---
 
@@ -22,14 +22,14 @@ ThreatVisualizationManager.cs
 
 ---
 
-## Recommended Development Stack
+## Target Development Stack
 
-- **Engine**: Unity 2022.3 LTS (recommended `2022.3.20f1`+) or Unity 6.
-- **Unity Hub Modules Required for Device Build**:
-  - `Android Build Support`
-  - `Android SDK & NDK Tools`
-  - `OpenJDK`
-- **XR Plugin**: OpenXR (`com.unity.xr.openxr`) with Meta Quest Feature Group enabled.
+- **Engine**: Unity 6.3 LTS (Editor `6000.6.2f1`).
+- **XR Packages**:
+  - `com.unity.feature.vr` (1.0.1)
+  - `com.unity.xr.openxr` (1.18.0)
+  - `com.unity.xr.management` (4.7.0)
+  - `com.unity.ugui` (2.6.0 with built-in TextMeshPro support)
 - **Target Platform**: Android (ARM64, ASTC texture compression).
 - **Target Device**: Meta Quest Pro (and Meta Quest 3/2 compatible).
 
@@ -57,11 +57,12 @@ unity/
 │       ├── Dev/
 │       │   └── QuestDevTestRunner.cs        # On-screen test HUD & offline mock simulator
 │       └── Editor/
-│           └── SceneSetupHelper.cs          # Menu item to auto-configure demo scene
+│           ├── SceneSetupHelper.cs          # Menu item to auto-configure demo scene
+│           └── PlayModeVerification.cs      # Automated batchmode verification test
 ├── Packages/
-│   └── manifest.json                        # Unity package dependencies
+│   └── manifest.json                        # Unity 6 package dependencies
 └── ProjectSettings/
-    └── ProjectVersion.txt                   # Editor version lock (2022.3.20f1)
+    └── ProjectVersion.txt                   # Editor version lock (6000.6.2f1)
 ```
 
 ---
@@ -69,15 +70,29 @@ unity/
 ## Quick Start in Unity Editor
 
 1. Open **Unity Hub**, click **Add project from disk**, and select the `unity/` folder.
-2. Select Unity version `2022.3.20f1` (or any installed 2022.3 LTS release).
-3. In the Unity top menu bar, select:
-   **`RF Threat Detection` -> `Setup Demo Scene`**
-   *(Or open `Assets/Scenes/MainThreatVisualization.unity` directly)*
+2. Select Unity version **`6000.6.2f1`** (Unity 6.3 LTS).
+3. Open `Assets/Scenes/MainThreatVisualization.unity` (or click `RF Threat Detection -> Setup Demo Scene`).
 4. Press **Play** in the Unity Editor:
    - The on-screen GUI will appear in the top-left corner.
    - **Mock Mode**: Toggle **Enable Mock** to simulate local moving threat frames directly in the Editor without needing Python or hardware.
-   - **Live Backend**: Run the Python backend (`uvicorn backend.app.main:app`), and click **Connect**. It will connect to `ws://127.0.0.1:8000/ws/threats`.
+   - **Live Backend**: Run the Python backend (`uvicorn backend.app.main:app`), and click **Connect**. It connects to `ws://127.0.0.1:8000/ws/threats`.
    - **Passthrough Preview**: Press `P` to toggle between Passthrough mode (transparent camera) and VR Dark Void mode.
+
+---
+
+## Automated Verification via Command Line
+
+You can run the full end-to-end verification test in batchmode:
+```powershell
+& "C:\Program Files\Unity\Hub\Editor\6000.6.2f1\Editor\Unity.exe" -batchmode -nographics -projectPath "C:\Projects\Hackathon\HTN26\unity" -executeMethod RFThreatDetection.Editor.PlayModeVerification.RunVerification -logFile "unity_verification.log"
+```
+This automatically verifies:
+- Scene creation and component wiring
+- Camera passthrough clear flags
+- Room coordinate 2D -> 3D transformation
+- Sensor pod marker instantiation (Pods A, B, C)
+- Volumetric moving threat rendering, uncertainty scaling ($2 \times r$), and billboard HUD updates
+- Entering and exiting live Unity 6.3 Play Mode
 
 ---
 
@@ -93,7 +108,6 @@ unity/
    - Under the **Android** tab, check **OpenXR**.
    - Under OpenXR feature groups, enable **Meta Quest Support**.
 3. **Backend Network Connection**:
-   - Inspect the `[RFThreatSystem]` GameObject in the hierarchy.
    - In `ThreatWebSocketClient`, set `Server Uri` to your laptop's local LAN IP:
      `ws://192.168.X.X:8000/ws/threats`
    - Verify both laptop and Quest Pro are on the same local Wi-Fi.

@@ -55,7 +55,7 @@ Use standard Wi-Fi station scan:
 
 ### Project Location
 A complete, isolated Unity project is set up at:
-`unity/` (open this folder in Unity Hub / Unity 2022.3 LTS or Unity 6).
+`unity/` (open this folder in Unity Hub / Unity 6.3 LTS `6000.6.2f1`).
 
 ### Architecture & Scripts Overview
 All C# scripts are located in `unity/Assets/Scripts/`:

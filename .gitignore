@@ -71,5 +71,20 @@ conda-bld/
 *.swp
 *.swo
 *~
-.DS_Store
 Thumbs.db
+
+# Unity generated
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+unity/Library/
+unity/Temp/
+unity/Logs/
+unity/UserSettings/
+*.log
+

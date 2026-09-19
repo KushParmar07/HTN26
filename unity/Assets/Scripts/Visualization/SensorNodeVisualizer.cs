@@ -24,15 +24,25 @@ namespace RFThreatDetection.Visualization
 
         private void Awake()
         {
+            EnsureTransformer();
+            EnsureBoundaryLineRenderer();
+        }
+
+        private void EnsureTransformer()
+        {
             if (transformer == null)
             {
-                transformer = FindObjectOfType<RoomCoordinateTransformer>();
+                transformer = GetComponent<RoomCoordinateTransformer>();
+                if (transformer == null)
+                {
+                    transformer = FindAnyObjectByType<RoomCoordinateTransformer>();
+                }
             }
-            EnsureBoundaryLineRenderer();
         }
 
         public void UpdateSensorNodes(SensorNodeData[] nodes)
         {
+            EnsureTransformer();
             if (nodes == null || nodes.Length == 0 || transformer == null) return;
 
             List<Vector3> worldPositions = new List<Vector3>();
@@ -62,7 +72,7 @@ namespace RFThreatDetection.Visualization
             pod.transform.localScale = new Vector3(nodeRadius * 2f, 0.05f, nodeRadius * 2f);
 
             Collider col = pod.GetComponent<Collider>();
-            if (col != null) Destroy(col);
+            SafeDestroy(col);
 
             Renderer r = pod.GetComponent<Renderer>();
             if (r != null)
@@ -108,6 +118,19 @@ namespace RFThreatDetection.Visualization
             for (int i = 0; i < positions.Count; i++)
             {
                 boundaryRenderer.SetPosition(i, positions[i]);
+            }
+        }
+
+        private static void SafeDestroy(UnityEngine.Object obj)
+        {
+            if (obj == null) return;
+            if (Application.isPlaying)
+            {
+                Destroy(obj);
+            }
+            else
+            {
+                DestroyImmediate(obj);
             }
         }
     }

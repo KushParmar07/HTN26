@@ -12,7 +12,7 @@ namespace RFThreatDetection.Editor
 {
     /// <summary>
     /// Editor helper to programmatically generate or configure the main threat visualization demo scene.
-    /// Developer 2 can simply run this menu command after importing the project into Unity 2022.3 LTS.
+    /// Developer 2 can simply run this menu command after importing the project into Unity 6.3 LTS.
     /// </summary>
     public static class SceneSetupHelper
     {
@@ -71,11 +71,14 @@ namespace RFThreatDetection.Editor
             AssetDatabase.Refresh();
 
             Debug.Log($"[SceneSetupHelper] Successfully built and saved demo scene to '{ScenePath}'!");
-            EditorUtility.DisplayDialog(
-                "RF Threat Detection Scene Setup",
-                $"Demo scene created successfully at:\n{ScenePath}\n\nYou can now press Play in the Unity Editor to test with mock threat data, or connect to the running Python backend via 'ws://127.0.0.1:8000/ws/threats'.",
-                "OK"
-            );
+            if (!Application.isBatchMode)
+            {
+                EditorUtility.DisplayDialog(
+                    "RF Threat Detection Scene Setup",
+                    $"Demo scene created successfully at:\n{ScenePath}\n\nYou can now press Play in the Unity Editor to test with mock threat data, or connect to the running Python backend via 'ws://127.0.0.1:8000/ws/threats'.",
+                    "OK"
+                );
+            }
         }
     }
 }

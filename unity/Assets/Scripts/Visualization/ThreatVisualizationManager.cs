@@ -29,13 +29,28 @@ namespace RFThreatDetection.Visualization
 
         private void Awake()
         {
-            if (webSocketClient == null) webSocketClient = FindObjectOfType<ThreatWebSocketClient>();
-            if (transformer == null) transformer = FindObjectOfType<RoomCoordinateTransformer>();
-            if (sensorVisualizer == null) sensorVisualizer = FindObjectOfType<SensorNodeVisualizer>();
+            EnsureDependencies();
+        }
+
+        public void EnsureDependencies()
+        {
+            if (webSocketClient == null)
+            {
+                webSocketClient = GetComponent<ThreatWebSocketClient>() ?? FindAnyObjectByType<ThreatWebSocketClient>();
+            }
+            if (transformer == null)
+            {
+                transformer = GetComponent<RoomCoordinateTransformer>() ?? FindAnyObjectByType<RoomCoordinateTransformer>();
+            }
+            if (sensorVisualizer == null)
+            {
+                sensorVisualizer = GetComponent<SensorNodeVisualizer>() ?? FindAnyObjectByType<SensorNodeVisualizer>();
+            }
         }
 
         private void OnEnable()
         {
+            EnsureDependencies();
             if (webSocketClient != null)
             {
                 webSocketClient.OnThreatStateReceived += HandleThreatState;
@@ -56,6 +71,7 @@ namespace RFThreatDetection.Visualization
         public void HandleThreatState(ThreatStateData state)
         {
             if (state == null) return;
+            EnsureDependencies();
 
             // 1. Update physical sensor nodes (Pods A, B, C)
             if (sensorVisualizer != null && state.sensor_nodes != null)

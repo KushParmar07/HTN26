@@ -50,6 +50,7 @@ namespace RFThreatDetection.Visualization
         /// </summary>
         public void UpdateThreatData(ThreatItemData data, Vector3 worldPosition)
         {
+            EnsureVisualComponents();
             this.threatId = data.threat_id;
             this.bssid = data.bssid;
             this.ssid = data.ssid;
@@ -131,7 +132,14 @@ namespace RFThreatDetection.Visualization
         private void SetMaterialTransparent(Material mat)
         {
             if (mat == null) return;
-            mat.SetFloat("_Mode", 3); // 3 = Transparent in Unity Standard Shader
+            if (mat.HasProperty("_Mode"))
+            {
+                mat.SetFloat("_Mode", 3); // 3 = Transparent in Unity Standard Shader
+            }
+            if (mat.HasProperty("_Surface"))
+            {
+                mat.SetFloat("_Surface", 1); // 1 = Transparent in URP Lit
+            }
             mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
             mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
             mat.SetInt("_ZWrite", 0);
@@ -153,12 +161,15 @@ namespace RFThreatDetection.Visualization
                 outer.transform.SetParent(this.transform, false);
                 outer.transform.localPosition = Vector3.zero;
                 Collider col = outer.GetComponent<Collider>();
-                if (col != null) Destroy(col);
+                SafeDestroy(col);
 
                 outerRenderer = outer.GetComponent<Renderer>();
                 if (outerRenderer != null)
                 {
-                    Material mat = new Material(Shader.Find("Standard"));
+                    Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+                    if (shader == null) shader = Shader.Find("Standard");
+                    if (shader == null) shader = Shader.Find("Sprites/Default");
+                    Material mat = new Material(shader);
                     SetMaterialTransparent(mat);
                     outerRenderer.material = mat;
                 }
@@ -181,7 +192,7 @@ namespace RFThreatDetection.Visualization
                 core.transform.localPosition = Vector3.zero;
                 core.transform.localScale = new Vector3(0.2f, 0.2f, 0.2f);
                 Collider col = core.GetComponent<Collider>();
-                if (col != null) Destroy(col);
+                SafeDestroy(col);
 
                 coreRenderer = core.GetComponent<Renderer>();
                 innerCore = core.transform;
@@ -203,6 +214,19 @@ namespace RFThreatDetection.Visualization
                 billboardText.anchor = TextAnchor.LowerCenter;
                 billboardText.alignment = TextAlignment.Center;
                 billboardText.color = Color.white;
+            }
+        }
+
+        private static void SafeDestroy(UnityEngine.Object obj)
+        {
+            if (obj == null) return;
+            if (Application.isPlaying)
+            {
+                Destroy(obj);
+            }
+            else
+            {
+                DestroyImmediate(obj);
             }
         }
     }

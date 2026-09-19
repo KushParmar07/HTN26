@@ -30,8 +30,8 @@ namespace RFThreatDetection.Dev
 
         private void Awake()
         {
-            if (webSocketClient == null) webSocketClient = FindObjectOfType<ThreatWebSocketClient>();
-            if (visualizationManager == null) visualizationManager = FindObjectOfType<ThreatVisualizationManager>();
+            if (webSocketClient == null) webSocketClient = GetComponent<ThreatWebSocketClient>() ?? FindAnyObjectByType<ThreatWebSocketClient>();
+            if (visualizationManager == null) visualizationManager = GetComponent<ThreatVisualizationManager>() ?? FindAnyObjectByType<ThreatVisualizationManager>();
         }
 
         private void OnEnable()
