@@ -51,30 +51,54 @@ Use standard Wi-Fi station scan:
 
 ---
 
-## 2. Meta Quest / VR Development (Developer 2)
+## 2. Meta Quest Pro / Unity VR Development (Developer 2)
 
-### Goal
-Connect to the backend WebSocket stream and render the 3D spatial threat volume around the estimated physical transmitter location.
+### Project Location
+A complete, isolated Unity project is set up at:
+`unity/` (open this folder in Unity Hub / Unity 2022.3 LTS or Unity 6).
 
-### WebSocket Connection
-- **Endpoint**: `ws://<backend-laptop-ip>:8000/ws/threats`
-- Emits continuous threat state JSON packets (10 Hz).
+### Architecture & Scripts Overview
+All C# scripts are located in `unity/Assets/Scripts/`:
+1. **`Network/ThreatWebSocketClient.cs`**:
+   - Manages connection to `ws://<laptop-ip>:8000/ws/threats`.
+   - Uses .NET `ClientWebSocket` with background receive loop and main-thread event dispatching.
+   - Dispatches `OnThreatStateReceived(ThreatStateData state)`.
+   - Automatically reconnects if connection drops.
+2. **`Spatial/RoomCoordinateTransformer.cs`**:
+   - Isolates all 2D backend $\rightarrow$ 3D Quest spatial room transformations.
+   - Maps $(X, Y)$ backend meters to $(X, Z)$ room space at calibrated height ($Y=1.0\text{m}$).
+   - Supports runtime recalibration of room origin and yaw alignment.
+3. **`Spatial/QuestPassthroughManager.cs`**:
+   - Manages Passthrough rendering by clearing camera background to `Color(0,0,0,0)`.
+   - Allows toggling Passthrough on/off in Editor with key `P` or runtime toggle.
+4. **`Visualization/ThreatVisualizationManager.cs`**:
+   - Core manager tracking active threat GameObjects by `threat_id`.
+   - Spawns, smoothly moves, and removes threat volumes when they disappear from the stream.
+5. **`Visualization/ThreatVolumeController.cs`**:
+   - Attached to each threat volume.
+   - Smoothly lerps spatial position towards target coordinates.
+   - Scales volumetric sphere diameter to $2 \times \text{uncertainty\_radius\_m}$.
+   - Shifts color from amber to critical red based on `risk_score` ($40$ to $100$).
+   - Manages world-space billboard HUD showing SSID, BSSID, and evidence flags facing the VR camera.
+6. **`Visualization/SensorNodeVisualizer.cs`**:
+   - Renders 3D markers for Pods A, B, C and reference boundary lines outlining the monitored area.
+7. **`Dev/QuestDevTestRunner.cs`**:
+   - On-screen GUI overlay in Editor/VR showing connection status, active threat metrics, and manual connect/disconnect controls.
+   - Includes local mock simulation fallback for testing in Unity Editor without running Python.
+8. **`Editor/SceneSetupHelper.cs`**:
+   - Adds top menu item `RF Threat Detection -> Setup Demo Scene` to configure everything in one click.
 
-### Coordinate Transformation
-The backend defines a 2D metric coordinate system:
-- Pod A: $(0.0, 0.0)$
-- Pod B: $(4.0, 0.0)$
-- Pod C: $(2.0, 3.5)$
+### How to Test in Unity Editor:
+1. Open `unity/` in Unity Hub.
+2. Open `Assets/Scenes/MainThreatVisualization.unity` (or click `RF Threat Detection -> Setup Demo Scene`).
+3. Hit **Play**:
+   - If the backend is running (`uvicorn backend.app.main:app`), click **Connect** in the on-screen overlay.
+   - If offline, toggle **Enable Mock** in the on-screen HUD to see the volumetric threat cloud float and move along the simulated path in the Editor.
+   - Press **P** to toggle passthrough mode / VR dark void mode.
 
-In Unity / Unreal / WebXR:
-- Backend $X \rightarrow$ Room $X$ (meters)
-- Backend $Y \rightarrow$ Room $Z$ (meters forward)
-- Fixed vertical offset $Y \approx 1.0\text{ m}$ (table/antenna height).
-
-### Visual Elements to Render:
-1. **Sensor Pod Markers**: 3 subtle indicators in physical space at $(0, 0)$, $(4, 0)$, and $(2, 3.5)$.
-2. **Threat Volume**:
-   - Render a volumetric sphere, translucent particle cloud, or pulsing shader at `threat.estimated_position_2d`.
-   - **Radius**: Scale diameter directly with `threat.uncertainty_radius_m`. When uncertainty is high, cloud expands and diffuses. When confidence is high, cloud tightens.
-   - **Color / Pulse**: Modulate color from orange to intense red based on `threat.risk_score` (0–100).
-   - **HUD / Tooltip**: Show `threat.ssid`, `threat.bssid`, and `threat.evidence_flags` (e.g. `UNKNOWN_BSSID`, `SECURITY_MISMATCH`).
+### How to Deploy to Meta Quest Pro:
+1. Install **Android Build Support**, **Android SDK & NDK Tools**, and **OpenJDK** via Unity Hub.
+2. In Unity, switch build platform to **Android** (ASTC texture compression).
+3. In **XR Plug-in Management**, enable **OpenXR** and enable the **Meta Quest Support** feature group under Android.
+4. In `ThreatWebSocketClient`, set `Server Uri` to `ws://<laptop-local-ip>:8000/ws/threats`.
+5. Connect Quest Pro via USB-C and select **Build and Run**.
