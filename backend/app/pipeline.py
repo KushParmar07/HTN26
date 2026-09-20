@@ -99,15 +99,29 @@ class BackendPipeline:
                     )
                 )
 
-        sensor_nodes_info = [
-            SensorNodeInfo(
+        sensor_nodes_dict: Dict[str, SensorNodeInfo] = {
+            node.pod_id: SensorNodeInfo(
                 pod_id=node.pod_id,
                 x=node.x,
                 y=node.y,
                 node_type=node.node_type.value if hasattr(node.node_type, "value") else str(node.node_type),
             )
             for node in self.config.sensor_nodes
-        ]
+            if node.enabled
+        }
+
+        # Dynamically include any active reporting sensor (e.g. mobile badge)
+        for ap in all_aps:
+            for pid, last_seen in ap.pod_last_seen_ms.items():
+                if pid not in sensor_nodes_dict and abs(now_ms - last_seen) <= self.config.stale_ap_ttl_ms:
+                    sensor_nodes_dict[pid] = SensorNodeInfo(
+                        pod_id=pid,
+                        x=0.0,
+                        y=0.0,
+                        node_type="mobile",
+                    )
+
+        sensor_nodes_info = list(sensor_nodes_dict.values())
 
         return ThreatStateResponse(
             version="1.0",

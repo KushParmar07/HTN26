@@ -88,3 +88,4 @@ unity/Logs/
 unity/UserSettings/
 *.log
 
+\backups

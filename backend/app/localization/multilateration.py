@@ -3,7 +3,7 @@
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 from scipy.optimize import least_squares
-from backend.app.config import SensorNodeConfig
+from backend.app.config import SensorNodeConfig, SensorNodeType
 from backend.app.models.threat import Position2D
 
 
@@ -34,7 +34,13 @@ class MultilaterationSolver2D:
         min_uncertainty_radius_m: float = 0.3,
         max_uncertainty_radius_m: float = 5.0,
     ):
-        self.sensor_nodes = {node.pod_id: (float(node.x), float(node.y)) for node in sensor_nodes}
+        # Only FIXED enabled sensor nodes can serve as spatial anchors for multilateration
+        self.sensor_nodes = {
+            node.pod_id: (float(node.x), float(node.y))
+            for node in sensor_nodes
+            if getattr(node, "node_type", SensorNodeType.FIXED) == SensorNodeType.FIXED
+            and getattr(node, "enabled", True)
+        }
         self.reference_rssi = reference_rssi
         self.path_loss_exponent = path_loss_exponent
         self.min_uncertainty_radius_m = min_uncertainty_radius_m
