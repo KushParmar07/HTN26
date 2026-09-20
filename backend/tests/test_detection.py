@@ -90,3 +90,64 @@ def test_unrelated_third_party_ap():
     status, risk, flags = detector.evaluate(other_ap, current_time_ms=10000)
     assert status == ThreatStatus.MONITORED
     assert risk < 40.0
+
+
+def test_duplicate_ssid_detection():
+    auth_config = AuthorizedNetworkConfig(
+        ssid="HTN-Secure",
+        authorized_bssids={"00:11:22:33:44:55"},
+    )
+    detector = DeterministicDetector(
+        authorized=auth_config,
+        weights=DetectionWeights(),
+        suspicious_threshold=40.0,
+    )
+
+    ap1 = APState(
+        bssid="11:22:33:44:55:66",
+        ssid="Guest-Wifi",
+        initial_seen_ms=1000,
+        channel=1,
+        authmode="WPA2_PSK",
+    )
+    ap2 = APState(
+        bssid="AA:BB:CC:DD:EE:FF",
+        ssid="Guest-Wifi",
+        initial_seen_ms=1000,
+        channel=6,
+        authmode="OPEN",
+    )
+
+    status, risk, flags = detector.evaluate(ap2, current_time_ms=5000, all_aps=[ap1, ap2])
+    assert EvidenceFlag.DUPLICATE_SSID in flags
+
+
+def test_multiple_sensors_and_strong_signal():
+    from backend.app.models.observation import SingleObservation
+
+    auth_config = AuthorizedNetworkConfig(
+        ssid="HTN-Secure",
+        authorized_bssids={"00:11:22:33:44:55"},
+    )
+    detector = DeterministicDetector(
+        authorized=auth_config,
+        weights=DetectionWeights(),
+        suspicious_threshold=40.0,
+    )
+
+    ap = APState(
+        bssid="AA:BB:CC:11:22:33",
+        ssid="HTN-Secure",
+        initial_seen_ms=1000,
+        channel=1,
+        authmode="OPEN",
+    )
+    obs = SingleObservation(bssid="AA:BB:CC:11:22:33", ssid="HTN-Secure", rssi=-42, channel=1, authmode="OPEN")
+    ap.update_pod_observation("pod_a", obs, 2000)
+    ap.update_pod_observation("pod_b", obs, 2000)
+
+    status, risk, flags = detector.evaluate(
+        ap, current_time_ms=5000, active_pods=["pod_a", "pod_b"]
+    )
+    assert EvidenceFlag.MULTIPLE_SENSORS in flags
+    assert EvidenceFlag.STRONG_SIGNAL in flags

@@ -255,3 +255,38 @@ def test_quest_threat_disappearance_and_expiration():
     assert len(state_expired.threats) == 0
     assert len(state_expired.active_threats) == 0
 
+
+def test_quest_contract_velocity_and_history_support():
+    pipeline.reset()
+    sim = SensorSimulator(config=SimulatorConfig(random_seed=42))
+
+    # Ingest step 0
+    batches_step0 = sim.generate_step(
+        scenario=ScenarioType.SUSPICIOUS, progress=0.0, step_index=0, timestamp_ms=100000, simulate_drops=False
+    )
+    for b in batches_step0:
+        pipeline.ingest(b, received_at_ms=100000)
+    state0 = pipeline.generate_threat_state(current_time_ms=100000)
+    assert len(state0.threats) >= 1
+    t0 = state0.threats[0]
+    assert len(t0.position_history) == 1
+    assert t0.filtered_rssi_by_pod is not None
+
+    # Ingest step 1 with movement
+    batches_step1 = sim.generate_step(
+        scenario=ScenarioType.SUSPICIOUS, progress=0.15, step_index=1, timestamp_ms=101000, simulate_drops=False
+    )
+    for b in batches_step1:
+        pipeline.ingest(b, received_at_ms=101000)
+    state1 = pipeline.generate_threat_state(current_time_ms=101000)
+    t1 = state1.threats[0]
+    assert len(t1.position_history) == 2
+    assert t1.velocity_2d is not None
+    assert t1.velocity_2d.movement_state in ["MOVING", "STATIONARY"]
+
+    # Verify sensor node metadata
+    assert len(state1.sensor_nodes) == 3
+    for node in state1.sensor_nodes:
+        assert node.node_type in ["fixed", "mobile"]
+
+

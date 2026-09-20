@@ -1,15 +1,23 @@
-"""System configuration, sensor coordinates, and detection rule weights."""
-
-from typing import List, Set
+from enum import Enum
+from typing import List, Optional, Set
 from pydantic import BaseModel, Field
 
 
+class SensorNodeType(str, Enum):
+    """Classification of an RF sensing node."""
+
+    FIXED = "fixed"
+    MOBILE = "mobile"
+
+
 class SensorNodeConfig(BaseModel):
-    """Coordinates of a fixed sensor pod in meters."""
+    """Configuration of an RF sensing node."""
 
     pod_id: str
-    x: float
-    y: float
+    x: float = 0.0
+    y: float = 0.0
+    node_type: SensorNodeType = SensorNodeType.FIXED
+    enabled: bool = True
 
 
 class AuthorizedNetworkConfig(BaseModel):
@@ -24,10 +32,13 @@ class AuthorizedNetworkConfig(BaseModel):
 class DetectionWeights(BaseModel):
     """Configurable weights for deterministic risk scoring."""
 
-    unknown_bssid: float = 50.0
-    security_mismatch: float = 30.0
+    unknown_bssid: float = 30.0
+    duplicate_ssid: float = 25.0
+    security_mismatch: float = 20.0
     unexpected_channel: float = 15.0
     sudden_appearance: float = 10.0
+    multiple_sensors: float = 10.0
+    strong_signal: float = 5.0
 
 
 class SystemConfig(BaseModel):

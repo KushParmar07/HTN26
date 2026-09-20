@@ -1,9 +1,9 @@
-"""Access Point state tracking per BSSID across distributed sensor pods."""
-
+from collections import deque
+import math
 import time
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Deque, Dict, List, Optional, Set, Tuple
 from backend.app.models.observation import PodObservationBatch, SingleObservation
-from backend.app.models.threat import Position2D
+from backend.app.models.threat import Position2D, Velocity2D
 from backend.app.state.filter import CompositeRssiFilter
 
 
@@ -20,6 +20,7 @@ class APState:
         median_window: int = 5,
         ema_alpha: float = 0.3,
         spatial_ema_alpha: float = 0.35,
+        max_history_len: int = 20,
     ):
         self.bssid = bssid
         self.ssid = ssid
@@ -34,16 +35,20 @@ class APState:
         self.median_window = median_window
         self.ema_alpha = ema_alpha
         self.spatial_ema_alpha = spatial_ema_alpha
+        self.max_history_len = max_history_len
 
         # Per-pod tracking
         self.pod_filters: Dict[str, CompositeRssiFilter] = {}
         self.pod_last_rssi_raw: Dict[str, int] = {}
         self.pod_last_seen_ms: Dict[str, int] = {}
 
-        # Smoothed 2D spatial tracking
+        # Smoothed 2D spatial tracking & movement
         self.estimated_pos: Optional[Position2D] = None
         self.uncertainty_radius_m: Optional[float] = None
         self.last_pos_update_ms: Optional[int] = None
+        self.position_history: Deque[Position2D] = deque(maxlen=max_history_len)
+        self.position_timestamps_ms: Deque[int] = deque(maxlen=max_history_len)
+        self.velocity_2d: Optional[Velocity2D] = None
 
     def update_pod_observation(
         self, pod_id: str, obs: SingleObservation, received_at_ms: int
@@ -82,6 +87,7 @@ class APState:
         """
         Apply temporal exponential smoothing to 2D coordinates and uncertainty
         to eliminate high-frequency spatial jitter for VR rendering.
+        Also derives 2D velocity vector, speed, heading, and movement state.
         If no fresh position is computed within pos_ttl_ms, clear the stale position.
         """
         current_time = now_ms if now_ms is not None else int(time.time() * 1000)
@@ -91,8 +97,11 @@ class APState:
             if self.last_pos_update_ms is not None and (current_time - self.last_pos_update_ms) > pos_ttl_ms:
                 self.estimated_pos = None
                 self.uncertainty_radius_m = None
+                self.velocity_2d = None
             return self.estimated_pos, self.uncertainty_radius_m
 
+        prev_pos = self.estimated_pos
+        prev_time = self.position_timestamps_ms[-1] if self.position_timestamps_ms else None
         self.last_pos_update_ms = current_time
 
         if self.estimated_pos is None or self.uncertainty_radius_m is None:
@@ -107,6 +116,47 @@ class APState:
             if raw_uncertainty is not None:
                 smooth_u = alpha * raw_uncertainty + (1.0 - alpha) * self.uncertainty_radius_m
                 self.uncertainty_radius_m = round(smooth_u, 3)
+
+        # Update bounded position history
+        self.position_history.append(self.estimated_pos)
+        self.position_timestamps_ms.append(current_time)
+
+        # Compute velocity if we have a previous position and sensible delta t
+        if prev_pos is not None and prev_time is not None:
+            dt_s = (current_time - prev_time) / 1000.0
+            if 0.1 <= dt_s <= 10.0:
+                dx = self.estimated_pos.x - prev_pos.x
+                dy = self.estimated_pos.y - prev_pos.y
+                inst_vx = dx / dt_s
+                inst_vy = dy / dt_s
+                inst_speed = math.hypot(inst_vx, inst_vy)
+
+                if self.velocity_2d is not None:
+                    v_alpha = 0.4
+                    vx = v_alpha * inst_vx + (1.0 - v_alpha) * self.velocity_2d.vx
+                    vy = v_alpha * inst_vy + (1.0 - v_alpha) * self.velocity_2d.vy
+                    speed = math.hypot(vx, vy)
+                else:
+                    vx = inst_vx
+                    vy = inst_vy
+                    speed = inst_speed
+
+                if speed > 0.15:
+                    movement_state = "MOVING"
+                    direction_deg = round((math.degrees(math.atan2(vy, vx))) % 360.0, 1)
+                else:
+                    movement_state = "STATIONARY"
+                    direction_deg = None
+
+                self.velocity_2d = Velocity2D(
+                    vx=round(vx, 3),
+                    vy=round(vy, 3),
+                    speed_mps=round(speed, 3),
+                    direction_deg=direction_deg,
+                    movement_state=movement_state,
+                )
+            elif dt_s > 10.0:
+                self.velocity_2d = None
 
         return self.estimated_pos, self.uncertainty_radius_m
 

@@ -52,11 +52,16 @@ class BackendPipeline:
         all_aps = self.state_manager.get_all_aps()
 
         for ap in all_aps:
-            status, risk_score, flags = self.detector.evaluate(ap, current_time_ms=now_ms)
+            # Active pods observing this AP within time window
+            active_pods = ap.get_active_pods(now_ms=now_ms, max_age_ms=10000)
+
+            # Evaluate threat status with global context
+            status, risk_score, flags = self.detector.evaluate(
+                ap, current_time_ms=now_ms, all_aps=all_aps, active_pods=active_pods
+            )
 
             # Get filtered RSSI per active pod
             pod_rssi_map: Dict[str, float] = {}
-            active_pods = ap.get_active_pods(now_ms=now_ms, max_age_ms=10000)
             for pod_id in active_pods:
                 f_rssi = ap.get_filtered_rssi(pod_id)
                 if f_rssi is not None:
@@ -83,16 +88,24 @@ class BackendPipeline:
                         evidence_flags=flags,
                         estimated_position_2d=smooth_pos_2d,
                         uncertainty_radius_m=smooth_uncertainty,
+                        velocity_2d=ap.velocity_2d,
+                        position_history=list(ap.position_history),
                         channel=ap.current_channel,
                         authmode=ap.authmode,
                         first_seen_ms=ap.first_seen_ms,
                         last_seen_ms=ap.last_seen_ms,
                         observed_by_pods=active_pods,
+                        filtered_rssi_by_pod=pod_rssi_map if pod_rssi_map else None,
                     )
                 )
 
         sensor_nodes_info = [
-            SensorNodeInfo(pod_id=node.pod_id, x=node.x, y=node.y)
+            SensorNodeInfo(
+                pod_id=node.pod_id,
+                x=node.x,
+                y=node.y,
+                node_type=node.node_type.value if hasattr(node.node_type, "value") else str(node.node_type),
+            )
             for node in self.config.sensor_nodes
         ]
 

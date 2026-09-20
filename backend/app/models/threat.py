@@ -17,10 +17,13 @@ class EvidenceFlag(str, Enum):
     """Deterministic evidence flags contributing to risk score."""
 
     UNKNOWN_BSSID = "UNKNOWN_BSSID"
+    DUPLICATE_SSID = "DUPLICATE_SSID"
     SECURITY_MISMATCH = "SECURITY_MISMATCH"
     SUDDEN_APPEARANCE = "SUDDEN_APPEARANCE"
     UNEXPECTED_CHANNEL = "UNEXPECTED_CHANNEL"
     SPATIAL_ANOMALY = "SPATIAL_ANOMALY"
+    MULTIPLE_SENSORS = "MULTIPLE_SENSORS"
+    STRONG_SIGNAL = "STRONG_SIGNAL"
 
 
 class Position2D(BaseModel):
@@ -30,12 +33,27 @@ class Position2D(BaseModel):
     y: float = Field(..., description="Y coordinate in meters relative to reference pod")
 
 
+class Velocity2D(BaseModel):
+    """2D velocity vector in meters per second."""
+
+    vx: float = Field(default=0.0, description="Velocity X component in m/s")
+    vy: float = Field(default=0.0, description="Velocity Y component in m/s")
+    speed_mps: float = Field(default=0.0, description="Scalar speed in m/s")
+    direction_deg: Optional[float] = Field(
+        default=None, description="Heading direction in degrees [0, 360) where 0 is +X"
+    )
+    movement_state: str = Field(
+        default="STATIONARY", description="Movement classification (e.g. STATIONARY, MOVING)"
+    )
+
+
 class SensorNodeInfo(BaseModel):
-    """Physical position of a fixed sensor pod."""
+    """Physical position and configuration of a sensing pod or node."""
 
     pod_id: str = Field(..., description="Pod identifier")
     x: float = Field(..., description="Fixed X coordinate in meters")
     y: float = Field(..., description="Fixed Y coordinate in meters")
+    node_type: str = Field(default="fixed", description="Node type: 'fixed' or 'mobile'")
 
 
 class ThreatItem(BaseModel):
@@ -58,6 +76,12 @@ class ThreatItem(BaseModel):
     uncertainty_radius_m: Optional[float] = Field(
         default=None, ge=0.0, description="Estimated 1-sigma uncertainty radius in meters"
     )
+    velocity_2d: Optional[Velocity2D] = Field(
+        default=None, description="Derived 2D velocity vector and speed"
+    )
+    position_history: List[Position2D] = Field(
+        default_factory=list, description="Recent bounded valid physical positions"
+    )
     channel: Optional[int] = Field(
         default=None, description="Current operating Wi-Fi channel"
     )
@@ -70,6 +94,9 @@ class ThreatItem(BaseModel):
     last_seen_ms: int = Field(..., description="Unix timestamp ms when AP was last observed")
     observed_by_pods: List[str] = Field(
         default_factory=list, description="List of pods that observed this AP in the active window"
+    )
+    filtered_rssi_by_pod: Optional[dict[str, float]] = Field(
+        default=None, description="Current filtered RSSI per detecting pod in dBm"
     )
 
     @model_validator(mode="after")
