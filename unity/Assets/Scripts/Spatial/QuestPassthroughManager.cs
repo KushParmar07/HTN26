@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace RFThreatDetection.Spatial
 {
@@ -31,6 +32,7 @@ namespace RFThreatDetection.Spatial
         private CameraClearFlags defaultClearFlags;
         private Color defaultBgColor;
         private Behaviour metaPassthroughLayer;
+        private Behaviour metaOvrManager;
 
         public bool IsPassthroughActive
         {
@@ -65,7 +67,7 @@ namespace RFThreatDetection.Spatial
 
         private void Update()
         {
-            if (enableKeyboardShortcut && Input.GetKeyDown(KeyCode.P))
+            if (enableKeyboardShortcut && Keyboard.current != null && Keyboard.current.pKey.wasPressedThisFrame)
             {
                 TogglePassthrough();
             }
@@ -141,6 +143,8 @@ namespace RFThreatDetection.Spatial
                 BindingFlags.Public | BindingFlags.Static);
             passthroughProperty?.SetValue(null, enabled);
 
+            EnsureMetaOvrManager(managerType, enabled);
+
             if (metaPassthroughLayer == null)
             {
                 metaPassthroughLayer = GetComponent(layerType) as Behaviour;
@@ -149,7 +153,43 @@ namespace RFThreatDetection.Spatial
             }
 
             if (metaPassthroughLayer != null)
+            {
                 metaPassthroughLayer.enabled = enabled;
+                SetMember(layerType, metaPassthroughLayer, "hidden", !enabled);
+                SetMember(layerType, metaPassthroughLayer, "textureOpacity", enabled ? 1f : 0f);
+                SetMember(layerType, metaPassthroughLayer, "edgeRenderingEnabled", false);
+            }
+        }
+
+        private void EnsureMetaOvrManager(Type managerType, bool enabled)
+        {
+            if (metaOvrManager == null)
+            {
+                metaOvrManager = GetComponent(managerType) as Behaviour;
+                if (metaOvrManager == null)
+                    metaOvrManager = gameObject.AddComponent(managerType) as Behaviour;
+            }
+
+            if (metaOvrManager == null) return;
+
+            metaOvrManager.enabled = true;
+            SetMember(managerType, metaOvrManager, "isInsightPassthroughEnabled", enabled);
+            SetMember(managerType, metaOvrManager, "SimultaneousHandsAndControllersEnabled", true);
+            SetMember(managerType, metaOvrManager, "shouldBoundaryVisibilityBeSuppressed", false);
+        }
+
+        private static void SetMember(Type type, object instance, string memberName, object value)
+        {
+            FieldInfo field = type.GetField(memberName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
+            if (field != null)
+            {
+                field.SetValue(field.IsStatic ? null : instance, value);
+                return;
+            }
+
+            PropertyInfo property = type.GetProperty(memberName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
+            if (property != null && property.CanWrite)
+                property.SetValue(property.GetGetMethod()?.IsStatic == true ? null : instance, value);
         }
 
         private static Type FindType(string typeName)

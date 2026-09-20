@@ -17,6 +17,8 @@ namespace RFThreatDetection.Network
     /// </summary>
     public class ThreatWebSocketClient : MonoBehaviour
     {
+        private const string ServerUriPrefsKey = "rf_threat_backend_ws_uri";
+
         [Header("Backend Connection")]
         [Tooltip("WebSocket endpoint URI")]
         [SerializeField] private string serverUri = "ws://127.0.0.1:8000/ws/threats";
@@ -26,6 +28,9 @@ namespace RFThreatDetection.Network
 
         [Tooltip("Connect automatically when scene starts")]
         [SerializeField] private bool connectOnStart = true;
+
+        [Tooltip("Save endpoint changes to PlayerPrefs so device test builds can reconnect after restart")]
+        [SerializeField] private bool persistServerUri = true;
 
         [Header("Development Mode")]
         [Tooltip("Enable simulated local threat stream if backend is offline")]
@@ -45,7 +50,12 @@ namespace RFThreatDetection.Network
         public string ServerUri
         {
             get => serverUri;
-            set => serverUri = value;
+            set => TrySetServerUri(value, false);
+        }
+
+        private void Awake()
+        {
+            LoadPersistedServerUri();
         }
 
         private void Start()
@@ -54,6 +64,41 @@ namespace RFThreatDetection.Network
             {
                 Connect();
             }
+        }
+
+        public bool TrySetServerUri(string value, bool reconnect)
+        {
+            if (!IsValidWebSocketUri(value, out Uri parsedUri))
+            {
+                Debug.LogWarning($"[ThreatWebSocketClient] Ignoring invalid WebSocket URI: {value}");
+                return false;
+            }
+
+            bool wasRunning = isRunning;
+            if (reconnect && wasRunning)
+                Disconnect();
+
+            serverUri = parsedUri.ToString();
+            if (persistServerUri)
+            {
+                PlayerPrefs.SetString(ServerUriPrefsKey, serverUri);
+                PlayerPrefs.Save();
+            }
+
+            Debug.Log($"[ThreatWebSocketClient] Backend target set to {serverUri}");
+
+            if (reconnect && wasRunning)
+                Connect();
+
+            return true;
+        }
+
+        public void Reconnect()
+        {
+            bool shouldReconnect = isRunning || connectOnStart;
+            Disconnect();
+            if (shouldReconnect)
+                Connect();
         }
 
         public void Connect()
@@ -224,6 +269,35 @@ namespace RFThreatDetection.Network
         private void OnApplicationQuit()
         {
             Disconnect();
+        }
+
+        private void LoadPersistedServerUri()
+        {
+            if (!persistServerUri || !PlayerPrefs.HasKey(ServerUriPrefsKey)) return;
+
+            string persistedUri = PlayerPrefs.GetString(ServerUriPrefsKey, string.Empty);
+            if (IsValidWebSocketUri(persistedUri, out Uri parsedUri))
+            {
+                serverUri = parsedUri.ToString();
+                Debug.Log($"[ThreatWebSocketClient] Loaded saved backend target {serverUri}");
+            }
+            else
+            {
+                PlayerPrefs.DeleteKey(ServerUriPrefsKey);
+                Debug.LogWarning("[ThreatWebSocketClient] Removed invalid saved backend target.");
+            }
+        }
+
+        private static bool IsValidWebSocketUri(string value, out Uri uri)
+        {
+            uri = null;
+            if (string.IsNullOrWhiteSpace(value)) return false;
+            if (!Uri.TryCreate(value.Trim(), UriKind.Absolute, out Uri parsedUri)) return false;
+            if (parsedUri.Scheme != "ws" && parsedUri.Scheme != "wss") return false;
+            if (string.IsNullOrWhiteSpace(parsedUri.Host)) return false;
+
+            uri = parsedUri;
+            return true;
         }
     }
 }
