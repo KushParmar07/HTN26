@@ -27,11 +27,14 @@ namespace RFThreatDetection.Dev
         private ThreatStateData latestState;
         private bool isConnected = false;
         private float offlineProgress = 0f;
+        private string endpointDraft = "ws://127.0.0.1:8000/ws/threats";
+        private string endpointMessage = string.Empty;
 
         private void Awake()
         {
             if (webSocketClient == null) webSocketClient = GetComponent<ThreatWebSocketClient>() ?? FindAnyObjectByType<ThreatWebSocketClient>();
             if (visualizationManager == null) visualizationManager = GetComponent<ThreatVisualizationManager>() ?? FindAnyObjectByType<ThreatVisualizationManager>();
+            if (webSocketClient != null) endpointDraft = webSocketClient.ServerUri;
         }
 
         private void OnEnable()
@@ -118,7 +121,7 @@ namespace RFThreatDetection.Dev
         {
             if (!showDebugOverlay) return;
 
-            GUILayout.BeginArea(new Rect(15, 15, 340, 240), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(15, 15, 430, 340), GUI.skin.box);
             GUILayout.Label("<b><size=14>RF Threat Detection - VR HUD</size></b>");
 
             string statusColor = isConnected ? "green" : (runOfflineSimulation ? "yellow" : "red");
@@ -139,6 +142,27 @@ namespace RFThreatDetection.Dev
                 }
                 GUILayout.Label($"Uncertainty: ±{threat.uncertainty_radius_m:F2}m");
             }
+
+            GUILayout.Space(5);
+            GUILayout.Label("<b>Backend WebSocket</b>");
+            endpointDraft = GUILayout.TextField(endpointDraft);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Apply + Reconnect"))
+            {
+                if (webSocketClient != null && webSocketClient.TrySetServerUri(endpointDraft, true))
+                    endpointMessage = "Saved endpoint.";
+                else
+                    endpointMessage = "Invalid endpoint. Use ws://<laptop-ip>:8000/ws/threats";
+            }
+            if (GUILayout.Button("Editor Localhost"))
+            {
+                endpointDraft = "ws://127.0.0.1:8000/ws/threats";
+                if (webSocketClient != null && webSocketClient.TrySetServerUri(endpointDraft, true))
+                    endpointMessage = "Saved localhost endpoint.";
+            }
+            GUILayout.EndHorizontal();
+            if (!string.IsNullOrEmpty(endpointMessage))
+                GUILayout.Label(endpointMessage);
 
             GUILayout.Space(5);
             GUILayout.BeginHorizontal();

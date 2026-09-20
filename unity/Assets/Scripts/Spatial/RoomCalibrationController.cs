@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using UnityEngine.XR;
+using XRCommonUsages = UnityEngine.XR.CommonUsages;
+using XRInputDevice = UnityEngine.XR.InputDevice;
+using XRInputDeviceCharacteristics = UnityEngine.XR.InputDeviceCharacteristics;
+using XRInputDevices = UnityEngine.XR.InputDevices;
 
 namespace RFThreatDetection.Spatial
 {
@@ -18,7 +21,7 @@ namespace RFThreatDetection.Spatial
 
         public event Action<string> OnCalibrationStatusChanged;
 
-        private readonly List<UnityEngine.XR.InputDevice> controllers = new List<UnityEngine.XR.InputDevice>();
+        private readonly List<XRInputDevice> controllers = new List<XRInputDevice>();
         private bool secondaryWasPressed;
 
         private void Awake()
@@ -65,10 +68,10 @@ namespace RFThreatDetection.Spatial
         private bool ReadSecondaryButton()
         {
             controllers.Clear();
-            InputDevices.GetDevicesWithCharacteristics(InputDeviceCharacteristics.Controller, controllers);
-            foreach (UnityEngine.XR.InputDevice controller in controllers)
+            XRInputDevices.GetDevicesWithCharacteristics(XRInputDeviceCharacteristics.Controller, controllers);
+            foreach (XRInputDevice controller in controllers)
             {
-                if (controller.TryGetFeatureValue(UnityEngine.XR.CommonUsages.secondaryButton, out bool pressed) && pressed)
+                if (controller.TryGetFeatureValue(XRCommonUsages.secondaryButton, out bool pressed) && pressed)
                     return true;
             }
             return false;
