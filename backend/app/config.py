@@ -48,8 +48,8 @@ class SystemConfig(BaseModel):
     sensor_nodes: List[SensorNodeConfig] = Field(
         default_factory=lambda: [
             SensorNodeConfig(pod_id="pod_a", x=0.0, y=0.0),
-            SensorNodeConfig(pod_id="pod_b", x=4.0, y=0.0),
-            SensorNodeConfig(pod_id="pod_c", x=2.0, y=3.5),
+            SensorNodeConfig(pod_id="pod_b", x=2.0, y=0.0),
+            SensorNodeConfig(pod_id="pod_c", x=1.0, y=1.7320508075688772),
         ]
     )
 
@@ -71,6 +71,7 @@ class SystemConfig(BaseModel):
     median_window: int = 5
     ema_alpha: float = 0.3
     stale_ap_ttl_ms: int = 20000             # 20 seconds
+    active_pod_window_ms: int = 20000        # tolerate staggered ESP32 scan/upload cycles
 
     # Spatial position temporal smoothing (1.0 = direct from filtered RSSI)
     spatial_smoothing_alpha: float = 1.0

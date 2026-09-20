@@ -3,6 +3,7 @@
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 from scipy.optimize import least_squares
+from scipy.spatial import ConvexHull, QhullError
 from backend.app.config import SensorNodeConfig
 from backend.app.models.threat import Position2D
 
@@ -40,6 +41,44 @@ class MultilaterationSolver2D:
         self.min_uncertainty_radius_m = min_uncertainty_radius_m
         self.max_uncertainty_radius_m = max_uncertainty_radius_m
 
+    @staticmethod
+    def _inside_sensor_hull(point: np.ndarray, coords: np.ndarray) -> bool:
+        """Return whether point lies inside the convex hull of non-collinear pods."""
+        try:
+            hull = ConvexHull(coords)
+        except QhullError:
+            return True  # Degenerate layouts retain the finite least-squares fallback.
+        polygon = coords[hull.vertices]
+        crosses = []
+        for index in range(len(polygon)):
+            start = polygon[index]
+            end = polygon[(index + 1) % len(polygon)]
+            edge = end - start
+            offset = point - start
+            crosses.append(edge[0] * offset[1] - edge[1] * offset[0])
+        return all(value >= -1e-6 for value in crosses) or all(
+            value <= 1e-6 for value in crosses
+        )
+
+    @staticmethod
+    def _signal_weighted_centroid(
+        coords: np.ndarray, rssi_values: np.ndarray
+    ) -> Tuple[np.ndarray, float]:
+        """
+        Produce an always-in-hull fallback from relative signal strengths.
+
+        Absolute RSSI-to-distance calibration varies substantially between ESP32
+        antennas and phone radios. Relative weighting still provides a stable,
+        explainable direction toward the pod receiving the strongest signal.
+        """
+        strongest = float(np.max(rssi_values))
+        weights = np.exp((rssi_values - strongest) / 10.0)
+        centroid = np.average(coords, axis=0, weights=weights)
+        spread = float(
+            np.sqrt(np.average(np.sum((coords - centroid) ** 2, axis=1), weights=weights))
+        )
+        return centroid, spread
+
     def solve(
         self, pod_rssi: Dict[str, float]
     ) -> Tuple[Optional[Position2D], Optional[float]]:
@@ -70,6 +109,7 @@ class MultilaterationSolver2D:
             ],
             dtype=float,
         )
+        rssi_values = np.array([float(pod_rssi[pid]) for pid in available_pods], dtype=float)
 
         # Residual function: difference between candidate Euclidean distance and estimated distance
         def residuals(pos: np.ndarray) -> np.ndarray:
@@ -111,11 +151,28 @@ class MultilaterationSolver2D:
                         spatial_std = float(np.sqrt(tr))
                 except Exception:
                     spatial_std = rmse
+
+            # Generic path-loss calibration can yield a mathematically valid point
+            # well outside a compact physical pod formation. When measurements are
+            # mutually inconsistent, use relative RSSI to keep the estimate inside
+            # the sensor hull and moving toward the strongest receiving pod.
+            estimated = np.array([estimated_x, estimated_y], dtype=float)
+            max_baseline = max(
+                np.linalg.norm(first - second)
+                for first in pod_coords
+                for second in pod_coords
+            )
+            inconsistent = rmse > max(0.75, max_baseline * 0.35)
+            if inconsistent or not self._inside_sensor_hull(estimated, pod_coords):
+                fallback, spread = self._signal_weighted_centroid(pod_coords, rssi_values)
+                estimated_x, estimated_y = float(fallback[0]), float(fallback[1])
+                spatial_std = max(self.min_uncertainty_radius_m, spread)
         except Exception:
             # Fallback to robust weighted centroid if nonlinear optimization fails
-            estimated_x = float(initial_guess[0])
-            estimated_y = float(initial_guess[1])
-            spatial_std = float(np.mean(distances))
+            fallback, spread = self._signal_weighted_centroid(pod_coords, rssi_values)
+            estimated_x = float(fallback[0])
+            estimated_y = float(fallback[1])
+            spatial_std = max(self.min_uncertainty_radius_m, spread)
 
         # Clamp uncertainty within strictly finite positive bounds
         if not np.isfinite(spatial_std) or spatial_std <= 0:

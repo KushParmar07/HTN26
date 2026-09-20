@@ -7,109 +7,180 @@ using RFThreatDetection.Visualization;
 namespace RFThreatDetection.Interaction
 {
     /// <summary>
-    /// Provides controller-free gaze selection. Looking at a threat highlights it;
-    /// holding the gaze selects it and opens the spatial details dashboard.
+    /// Uses the right motion controller as a laser pointer. Right trigger selects a
+    /// threat heatmap; right grip drags the world-anchored information panel.
     /// </summary>
     public class ThreatFocusController : MonoBehaviour
     {
-        [SerializeField] private Camera viewerCamera;
         [SerializeField] private SpatialThreatDashboard dashboard;
         [SerializeField] private float maxDistanceMeters = 20f;
-        [SerializeField] private float dwellSeconds = 0.65f;
 
         private readonly List<InputDevice> controllers = new List<InputDevice>();
         private ThreatVolumeController focusedThreat;
         private ThreatVolumeController selectedThreat;
-        private float focusStartedAt;
-        private bool primaryWasPressed;
+        private bool triggerWasPressed;
+        private bool gripWasPressed;
+        private bool draggingDashboard;
+        private float dashboardDragDistance = 1f;
         private Transform reticle;
         private Renderer reticleRenderer;
+        private LineRenderer pointerLine;
 
         private void Awake()
         {
-            if (viewerCamera == null) viewerCamera = Camera.main;
             if (dashboard == null) dashboard = FindAnyObjectByType<SpatialThreatDashboard>();
-            CreateReticle();
+            CreatePointerVisuals();
         }
 
         private void Update()
         {
-            if (viewerCamera == null) return;
-
-            Ray ray = new Ray(viewerCamera.transform.position, viewerCamera.transform.forward);
-            ThreatVolumeController candidate = null;
-            float reticleDistance = 1.1f;
-
-            // Threat transforms are animated every frame. Sync their colliders before
-            // the gaze query so the ray always matches the visible cloud position.
-            Physics.SyncTransforms();
-            if (Physics.Raycast(ray, out RaycastHit hit, maxDistanceMeters, ~0, QueryTriggerInteraction.Collide))
+            if (!TryGetRightController(out InputDevice controller) ||
+                !controller.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 position) ||
+                !controller.TryGetFeatureValue(CommonUsages.deviceRotation, out Quaternion rotation))
             {
-                candidate = hit.collider.GetComponentInParent<ThreatVolumeController>();
-                reticleDistance = Mathf.Clamp(hit.distance - 0.02f, 0.3f, 3f);
+                SetFocusedThreat(null);
+                SetPointerVisible(false);
+                draggingDashboard = false;
+                triggerWasPressed = false;
+                gripWasPressed = false;
+                return;
             }
 
+            Transform trackingSpace = Camera.main != null ? Camera.main.transform.parent : null;
+            if (trackingSpace != null)
+            {
+                position = trackingSpace.TransformPoint(position);
+                rotation = trackingSpace.rotation * rotation;
+            }
+            Ray ray = new Ray(position, rotation * Vector3.forward);
+            Physics.SyncTransforms();
+            bool hasHit = Physics.Raycast(ray, out RaycastHit hit, maxDistanceMeters, ~0,
+                                          QueryTriggerInteraction.Collide);
+            float distance = hasHit ? hit.distance : 3f;
+            ThreatVolumeController candidate = hasHit
+                ? hit.collider.GetComponentInParent<ThreatVolumeController>()
+                : null;
+            bool pointsAtDashboard = hasHit && dashboard != null && dashboard.OwnsCollider(hit.collider);
+
             SetFocusedThreat(candidate);
-            UpdateReticle(reticleDistance, candidate != null);
 
-            bool primaryPressed = ReadPrimaryButton();
-            bool selectPressed = primaryPressed && !primaryWasPressed;
-            primaryWasPressed = primaryPressed;
+            bool triggerPressed = controller.TryGetFeatureValue(CommonUsages.triggerButton, out bool trigger) && trigger;
+            if (controller.TryGetFeatureValue(CommonUsages.trigger, out float triggerValue))
+                triggerPressed |= triggerValue >= (triggerWasPressed ? 0.25f : 0.65f);
+            if (triggerPressed && !triggerWasPressed)
+            {
+                if (pointsAtDashboard) dashboard.HandlePointerClick(hit.collider);
+                else if (focusedThreat != null) SelectThreat(focusedThreat);
+            }
+            triggerWasPressed = triggerPressed;
 
-            if (focusedThreat != null && (selectPressed || Time.unscaledTime - focusStartedAt >= dwellSeconds))
-                SelectThreat(focusedThreat);
+            bool gripPressed = controller.TryGetFeatureValue(CommonUsages.gripButton, out bool grip) && grip;
+            if (gripPressed && !gripWasPressed && pointsAtDashboard)
+            {
+                draggingDashboard = true;
+                dashboardDragDistance = Mathf.Clamp(hit.distance, 0.35f, 3f);
+            }
+            if (draggingDashboard && gripPressed)
+                dashboard.MovePanelToRay(ray, dashboardDragDistance);
+            if (!gripPressed) draggingDashboard = false;
+            gripWasPressed = gripPressed;
+
+            Color pointerColor = candidate != null
+                ? new Color(1f, 0.2f, 0.08f, 0.9f)
+                : pointsAtDashboard
+                    ? new Color(0.75f, 0.35f, 1f, 0.9f)
+                    : new Color(0.15f, 0.9f, 1f, 0.72f);
+            UpdatePointer(ray, distance, pointerColor, candidate != null || pointsAtDashboard);
+        }
+
+        private bool TryGetRightController(out InputDevice controller)
+        {
+            controllers.Clear();
+            InputDevices.GetDevicesWithCharacteristics(InputDeviceCharacteristics.Controller |
+                                                        InputDeviceCharacteristics.Right, controllers);
+            if (controllers.Count > 0)
+            {
+                controller = controllers[0];
+                return true;
+            }
+            controller = default;
+            return false;
         }
 
         private void SetFocusedThreat(ThreatVolumeController candidate)
         {
-            if (candidate == focusedThreat) return;
+            if (candidate == focusedThreat)
+            {
+                if (candidate == null) dashboard?.ClearThreat();
+                return;
+            }
             if (focusedThreat != null) focusedThreat.SetFocused(false);
             focusedThreat = candidate;
-            focusStartedAt = Time.unscaledTime;
-            if (focusedThreat != null) focusedThreat.SetFocused(true);
+            if (focusedThreat != null)
+            {
+                focusedThreat.SetFocused(true);
+                dashboard?.ShowThreat(focusedThreat.LatestData);
+            }
+            else
+            {
+                dashboard?.ClearThreat();
+            }
         }
 
         private void SelectThreat(ThreatVolumeController threat)
         {
-            if (selectedThreat == threat) return;
-            if (selectedThreat != null) selectedThreat.SetSelected(false);
+            if (selectedThreat != null && selectedThreat != threat)
+                selectedThreat.SetSelected(false);
             selectedThreat = threat;
             selectedThreat.SetSelected(true);
             dashboard?.ShowThreat(selectedThreat.LatestData);
         }
 
-        private bool ReadPrimaryButton()
+        private void CreatePointerVisuals()
         {
-            controllers.Clear();
-            InputDevices.GetDevicesWithCharacteristics(InputDeviceCharacteristics.Controller, controllers);
-            foreach (InputDevice controller in controllers)
-            {
-                if (controller.TryGetFeatureValue(CommonUsages.primaryButton, out bool pressed) && pressed)
-                    return true;
-            }
-            return false;
-        }
+            Shader shader = Resources.Load<Shader>("Shaders/SolidUnlit");
 
-        private void CreateReticle()
-        {
+            GameObject lineObject = new GameObject("RightThreatPointerRay");
+            pointerLine = lineObject.AddComponent<LineRenderer>();
+            pointerLine.positionCount = 2;
+            pointerLine.useWorldSpace = true;
+            pointerLine.startWidth = 0.007f;
+            pointerLine.endWidth = 0.002f;
+            if (shader != null) pointerLine.material = new Material(shader);
+
             GameObject reticleObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            reticleObject.name = "GazeReticle";
-            reticleObject.transform.localScale = Vector3.one * 0.012f;
+            reticleObject.name = "ControllerPointerReticle";
+            reticleObject.transform.localScale = Vector3.one * 0.018f;
             Destroy(reticleObject.GetComponent<Collider>());
             reticleRenderer = reticleObject.GetComponent<Renderer>();
-            Shader shader = Shader.Find("Unlit/Color") ?? Shader.Find("Sprites/Default");
-            reticleRenderer.material = new Material(shader);
+            if (shader != null) reticleRenderer.material = new Material(shader);
             reticle = reticleObject.transform;
+            SetPointerVisible(false);
         }
 
-        private void UpdateReticle(float distance, bool hasTarget)
+        private void UpdatePointer(Ray ray, float distance, Color color, bool hasTarget)
         {
-            if (reticle == null) return;
-            reticle.position = viewerCamera.transform.position + viewerCamera.transform.forward * distance;
-            reticle.rotation = viewerCamera.transform.rotation;
-            reticle.localScale = Vector3.one * (hasTarget ? 0.018f : 0.010f);
-            if (reticleRenderer != null)
-                reticleRenderer.material.color = hasTarget ? new Color(1f, 0.35f, 0.1f) : new Color(0.2f, 0.9f, 1f);
+            SetPointerVisible(true);
+            Vector3 endpoint = ray.GetPoint(Mathf.Clamp(distance, 0.05f, maxDistanceMeters));
+            pointerLine.SetPosition(0, ray.origin);
+            pointerLine.SetPosition(1, endpoint);
+            pointerLine.startColor = color;
+            pointerLine.endColor = color;
+            reticle.position = endpoint;
+            reticle.localScale = Vector3.one * (hasTarget ? 0.026f : 0.014f);
+            SetColor(pointerLine.material, color);
+            SetColor(reticleRenderer.material, color);
+        }
+
+        private void SetPointerVisible(bool visible)
+        {
+            if (pointerLine != null) pointerLine.enabled = visible;
+            if (reticleRenderer != null) reticleRenderer.enabled = visible;
+        }
+
+        private static void SetColor(Material material, Color color)
+        {
+            if (material != null && material.HasProperty("_Color")) material.SetColor("_Color", color);
         }
     }
 }

@@ -7,8 +7,8 @@
 // Configuration Constants
 // =============================================================================
 // Dedicated local transport network hosted directly by the laptop (2.4 GHz, no AP isolation)
-const char* WIFI_SSID     = "KUSH-PC 3059";
-const char* WIFI_PASSWORD = "08c0C92%";
+const char* WIFI_SSID     = "WMBY 2056";
+const char* WIFI_PASSWORD = "friedchicken";
 const char* BACKEND_HOST  = "192.168.137.1";
 const int   BACKEND_PORT  = 8000;
 const char* POD_ID        = "pod_c";
@@ -21,6 +21,37 @@ static unsigned long scanCycle = 0;
 // =============================================================================
 // Helper Functions
 // =============================================================================
+
+bool prepareScanRadio() {
+  // A timed-out WiFi.begin() can leave the driver connecting. Scanning while
+  // connecting is rejected. Stop the radio before starting a fresh scan phase.
+  WiFi.setAutoReconnect(false);
+  WiFi.scanDelete();
+  if (!WiFi.mode(WIFI_OFF)) {
+    Serial.println("[RADIO ERROR] Could not stop Wi-Fi.");
+    return false;
+  }
+  delay(200);
+  if (!WiFi.mode(WIFI_STA)) {
+    Serial.println("[RADIO ERROR] Could not start station mode.");
+    return false;
+  }
+  WiFi.setAutoReconnect(false);
+  delay(200);
+  return true;
+}
+
+void logWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+  if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+    wifi_err_reason_t reason = static_cast<wifi_err_reason_t>(info.wifi_sta_disconnected.reason);
+    Serial.printf("\n[WIFI DISCONNECT] reason=%u (%s)\n",
+                  static_cast<unsigned int>(reason), WiFi.STA.disconnectReasonName(reason));
+  } else if (event == ARDUINO_EVENT_WIFI_STA_CONNECTED) {
+    Serial.println("\n[WIFI LINK] Associated with AP; waiting for DHCP address...");
+  } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+    Serial.println("\n[WIFI DHCP] IP address received.");
+  }
+}
 
 const char* authModeToString(wifi_auth_mode_t authmode) {
   switch (authmode) {
@@ -98,7 +129,7 @@ bool connectToTransportNetwork() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 20000) {
     delay(400);
     Serial.print(".");
   }
@@ -112,6 +143,8 @@ bool connectToTransportNetwork() {
     return true;
   } else {
     Serial.printf("[WIFI FAILED] Status code: %d\n", WiFi.status());
+    // Cancel the outstanding connection attempt before the next scan.
+    WiFi.disconnect(true);
     return false;
   }
 }
@@ -123,10 +156,12 @@ bool connectToTransportNetwork() {
 void setup() {
   Serial.begin(115200);
   delay(1500);
+  WiFi.onEvent(logWiFiEvent);
 
   Serial.println();
   Serial.println("==================================================");
   Serial.println("[RF-THREAT-DETECTION] ESP32-U Live Ingest Client");
+  Serial.println("[FIRMWARE] scan-recovery + Wi-Fi reason diagnostics v2");
   Serial.println("Hardware: ESP32-U Dev Board w/ 3dBi Antenna");
   Serial.println("Stage: Production Hardware Ingest Client");
   Serial.printf("Config: Pod ID='%s' | Backend=http://%s:%d/api/ingest\n",
@@ -134,6 +169,7 @@ void setup() {
   Serial.println("==================================================");
 
   WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(false);
   WiFi.disconnect();
   delay(200);
 
@@ -150,18 +186,23 @@ void setup() {
 
 void loop() {
   scanCycle++;
+  if (!prepareScanRadio()) {
+    delay(CYCLE_DELAY_MS);
+    return;
+  }
   Serial.println("--------------------------------------------------");
   Serial.printf("[CYCLE #%lu] Starting passive RF scan... (Heap: %u bytes)\n",
                 scanCycle, ESP.getFreeHeap());
 
   // 1. Perform passive Wi-Fi scan across all 2.4 GHz channels (including hidden)
   unsigned long scanStartMs = millis();
-  int16_t n = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/true);
+  int16_t n = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/true, /*passive=*/true);
   unsigned long scanDurationMs = millis() - scanStartMs;
 
   if (n < 0) {
-    Serial.printf("[SCAN ERROR] Scan failed with code %d. Resetting Wi-Fi stack...\n", n);
-    WiFi.disconnect();
+    Serial.printf("[SCAN ERROR] Scan failed with code %d. Stopping radio before next retry...\n", n);
+    WiFi.scanDelete();
+    WiFi.mode(WIFI_OFF);
     delay(CYCLE_DELAY_MS);
     return;
   }
@@ -259,7 +300,7 @@ void loop() {
   http.end();
 
   // Disconnect from transport so next cycle can perform a clean channel-hopping scan
-  WiFi.disconnect();
+  WiFi.disconnect(true);
 
   Serial.printf("[CYCLE #%lu COMPLETE] Heap free: %u bytes. Resting for %lu ms...\n\n",
                 scanCycle, ESP.getFreeHeap(), CYCLE_DELAY_MS);

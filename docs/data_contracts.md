@@ -124,3 +124,7 @@
    - Backend $X \rightarrow$ VR Room $X$ (Right).
    - Backend $Y \rightarrow$ VR Room $Z$ (Forward / Depth).
    - VR Room $Y$ (Height / Vertical) $\approx 0.0\text{ m}$ (floor level) or calibrated antenna height ($1.0\text{ m}$).
+
+## Below-threshold Wi-Fi sources
+
+Snapshots from `/api/threats` and `/ws/threats` additionally include `monitored_aps`, an array with the same item schema as `threats`. These are currently observed APs below the configured threat threshold. `threats` and `active_threats` retain their existing semantics. IDs remain stable when a source crosses the threshold. Older clients can ignore the extra field. Unity renders localized monitored sources in blue; blue does not mean verified safe. Entries without an estimated position cannot be placed spatially.

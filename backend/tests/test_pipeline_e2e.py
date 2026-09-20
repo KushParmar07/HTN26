@@ -16,7 +16,7 @@ def test_e2e_moving_rogue_tracking():
 
     sim = SensorSimulator(config=DEFAULT_SIMULATOR_CONFIG)
 
-    # Step 1: Rogue AP at initial position (progress = 0.0 -> near (0.5, 0.5))
+    # Step 1: Rogue AP at initial position inside the compact triangle.
     batches_step0 = sim.generate_step(progress=0.0, add_noise=False, simulate_drops=False)
     for batch in batches_step0:
         resp = client.post("/api/ingest", json=batch.model_dump())
@@ -33,11 +33,10 @@ def test_e2e_moving_rogue_tracking():
 
     pos_0 = threat_0["estimated_position_2d"]
     assert pos_0 is not None
-    # Close to initial position (0.5, 0.5)
-    assert pos_0["x"] == pytest.approx(0.5, abs=0.2)
-    assert pos_0["y"] == pytest.approx(0.5, abs=0.2)
+    assert pos_0["x"] == pytest.approx(0.3, abs=0.2)
+    assert pos_0["y"] == pytest.approx(0.3, abs=0.2)
 
-    # Step 2: Move rogue AP to opposite corner (progress = 0.5 -> (3.5, 2.5))
+    # Step 2: Move rogue AP across the physical triangle (progress = 0.5 -> end).
     # Send multiple batches to let composite filter track the movement
     for _ in range(6):
         batches_step1 = sim.generate_step(progress=0.5, add_noise=False, simulate_drops=False)
@@ -51,9 +50,8 @@ def test_e2e_moving_rogue_tracking():
     pos_1 = threat_1["estimated_position_2d"]
 
     assert pos_1 is not None
-    # Position should have moved significantly towards (3.5, 2.5)
-    assert pos_1["x"] > 2.5
-    assert pos_1["y"] > 1.8
+    assert pos_1["x"] > 1.1
+    assert pos_1["y"] > 0.35
 
 
 def test_e2e_websocket_threat_stream():

@@ -121,6 +121,10 @@ class ThreatStateResponse(BaseModel):
         default_factory=list, description="List of active detected threats"
     )
 
+    monitored_aps: List[ThreatItem] = Field(
+        default_factory=list, description="Active APs below the threat threshold; not a guarantee of safety"
+    )
+
     @computed_field
     @property
     def active_threats(self) -> List[ThreatItem]:

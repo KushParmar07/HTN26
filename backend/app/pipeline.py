@@ -49,11 +49,14 @@ class BackendPipeline:
         self.state_manager.prune_stale(now_ms=now_ms)
 
         threat_items: List[ThreatItem] = []
+        monitored_items: List[ThreatItem] = []
         all_aps = self.state_manager.get_all_aps()
 
         for ap in all_aps:
             # Active pods observing this AP within time window
-            active_pods = ap.get_active_pods(now_ms=now_ms, max_age_ms=10000)
+            active_pods = ap.get_active_pods(
+                now_ms=now_ms, max_age_ms=self.config.active_pod_window_ms
+            )
 
             # Evaluate threat status with global context
             status, risk_score, flags = self.detector.evaluate(
@@ -75,10 +78,12 @@ class BackendPipeline:
                 raw_pos=raw_pos_2d, raw_uncertainty=raw_uncertainty, now_ms=now_ms
             )
 
-            # Include any AP that is classified as suspicious or meets risk threshold
-            if status == ThreatStatus.SUSPICIOUS_INFRASTRUCTURE or risk_score >= self.config.suspicious_threshold:
+            # Preserve the threat list; expose other actively observed APs separately.
+            is_threat = status == ThreatStatus.SUSPICIOUS_INFRASTRUCTURE or risk_score >= self.config.suspicious_threshold
+            if is_threat or active_pods:
+                destination = threat_items if is_threat else monitored_items
                 clean_bssid = ap.bssid.replace(":", "").lower()
-                threat_items.append(
+                destination.append(
                     ThreatItem(
                         threat_id=f"threat_{clean_bssid}",
                         bssid=ap.bssid,
@@ -114,6 +119,7 @@ class BackendPipeline:
             generated_at_ms=now_ms,
             sensor_nodes=sensor_nodes_info,
             threats=threat_items,
+            monitored_aps=monitored_items,
         )
 
     def reset(self) -> None:

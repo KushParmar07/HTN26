@@ -161,6 +161,11 @@ namespace RFThreatDetection.Network
                         await ReceiveLoop(webSocket, token);
                     }
                 }
+                catch (OperationCanceledException) when (!token.IsCancellationRequested)
+                {
+                    Debug.LogWarning("[ThreatWebSocketClient] Connection timed out; retrying.");
+                    SetConnected(false);
+                }
                 catch (OperationCanceledException)
                 {
                     break;

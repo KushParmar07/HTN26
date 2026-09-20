@@ -8,8 +8,8 @@ namespace RFThreatDetection.Spatial
     ///
     /// Backend plane:
     ///   - Pod A is at origin (0, 0)
-    ///   - Pod B is at (4.0, 0) along the baseline (+X)
-    ///   - Pod C is at (2.0, 3.5) into the room (+Y)
+    ///   - Pod B is at (2.0, 0) along the baseline (+X)
+    ///   - Pod C is at (1.0, 1.73205) into the room (+Y)
     ///
     /// Quest 3D space:
     ///   - +X is Right
@@ -31,9 +31,14 @@ namespace RFThreatDetection.Spatial
         [Tooltip("Global metric scale factor (1.0 = 1 meter)")]
         [SerializeField] private float scaleFactor = 1.0f;
 
+        private bool usesPlacedPodCalibration;
+        private Vector3 placedXAxisPerMeter = Vector3.right;
+        private Vector3 placedYAxisPerMeter = Vector3.forward;
+
         public Vector3 RoomOrigin => roomOrigin;
         public float RoomYawDegrees => roomYawDegrees;
         public float DefaultHeightMeters => defaultHeightMeters;
+        public bool UsesPlacedPodCalibration => usesPlacedPodCalibration;
 
         /// <summary>
         /// Transform 2D backend coordinates (X, Y) into 3D Quest world coordinates.
@@ -45,6 +50,12 @@ namespace RFThreatDetection.Spatial
         public Vector3 BackendToWorld(float backendX, float backendY, float customHeight = -1f)
         {
             float height = customHeight >= 0f ? customHeight : defaultHeightMeters;
+
+            if (usesPlacedPodCalibration)
+            {
+                return roomOrigin + placedXAxisPerMeter * backendX +
+                       placedYAxisPerMeter * backendY + Vector3.up * height;
+            }
 
             // Map backend 2D (X, Y) into local 3D (Right, Up, Forward)
             Vector3 localPos = new Vector3(
@@ -76,6 +87,21 @@ namespace RFThreatDetection.Spatial
         public Vector2 WorldToBackend(Vector3 worldPos)
         {
             Vector3 diff = worldPos - roomOrigin;
+
+            if (usesPlacedPodCalibration)
+            {
+                diff.y = 0f;
+                float xx = Vector3.Dot(placedXAxisPerMeter, placedXAxisPerMeter);
+                float xy = Vector3.Dot(placedXAxisPerMeter, placedYAxisPerMeter);
+                float yy = Vector3.Dot(placedYAxisPerMeter, placedYAxisPerMeter);
+                float dx = Vector3.Dot(diff, placedXAxisPerMeter);
+                float dy = Vector3.Dot(diff, placedYAxisPerMeter);
+                float determinant = xx * yy - xy * xy;
+                if (Mathf.Abs(determinant) < 0.0001f) return Vector2.zero;
+                return new Vector2((dx * yy - dy * xy) / determinant,
+                                   (dy * xx - dx * xy) / determinant);
+            }
+
             Quaternion invRot = Quaternion.Euler(0f, -roomYawDegrees, 0f);
             Vector3 local = invRot * diff;
 
@@ -89,9 +115,36 @@ namespace RFThreatDetection.Spatial
         /// </summary>
         public void RecalibrateOrigin(Vector3 newOrigin, float newYaw)
         {
+            usesPlacedPodCalibration = false;
             roomOrigin = newOrigin;
             roomYawDegrees = newYaw;
             Debug.Log($"[RoomCoordinateTransformer] Recalibrated: Origin={roomOrigin}, Yaw={roomYawDegrees}°");
+        }
+
+        /// <summary>
+        /// Fits the backend coordinate plane to three controller-placed physical pod points.
+        /// This preserves the backend's fixed A(0,0), B(2,0), C(1,sqrt(3)) geometry while
+        /// allowing the AR overlay to match the actual room.
+        /// </summary>
+        public bool RecalibrateFromPlacedPods(Vector3 podAWorld, Vector3 podBWorld, Vector3 podCWorld)
+        {
+            podAWorld.y = 0f;
+            podBWorld.y = 0f;
+            podCWorld.y = 0f;
+
+            Vector3 xAxis = (podBWorld - podAWorld) / 2f;
+            Vector3 yAxis = (podCWorld - podAWorld - xAxis * 1f) / Mathf.Sqrt(3f);
+            if (xAxis.magnitude < 0.15f || yAxis.magnitude < 0.15f ||
+                Vector3.Cross(xAxis, yAxis).sqrMagnitude < 0.0025f)
+                return false;
+
+            roomOrigin = podAWorld;
+            placedXAxisPerMeter = xAxis;
+            placedYAxisPerMeter = yAxis;
+            usesPlacedPodCalibration = true;
+            roomYawDegrees = Mathf.Atan2(xAxis.z, xAxis.x) * Mathf.Rad2Deg;
+            Debug.Log($"[RoomCoordinateTransformer] Three-point pod calibration applied: A={podAWorld}, B={podBWorld}, C={podCWorld}");
+            return true;
         }
 
         private void OnDrawGizmosSelected()
@@ -101,8 +154,8 @@ namespace RFThreatDetection.Spatial
             Gizmos.DrawWireSphere(roomOrigin, 0.15f);
 
             Vector3 podA = BackendToWorld(0f, 0f, 0.1f);
-            Vector3 podB = BackendToWorld(4f, 0f, 0.1f);
-            Vector3 podC = BackendToWorld(2f, 3.5f, 0.1f);
+            Vector3 podB = BackendToWorld(2f, 0f, 0.1f);
+            Vector3 podC = BackendToWorld(1f, Mathf.Sqrt(3f), 0.1f);
 
             Gizmos.color = Color.cyan;
             Gizmos.DrawLine(podA, podB);

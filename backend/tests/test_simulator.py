@@ -25,5 +25,5 @@ def test_simulator_rogue_movement():
     pos_start = sim.get_ap_position(sim.config.rogue_ap, progress=0.0)
     pos_mid = sim.get_ap_position(sim.config.rogue_ap, progress=0.5)
 
-    assert pos_start == (0.5, 0.5)
-    assert pos_mid == (3.5, 2.5)
+    assert pos_start == (0.3, 0.3)
+    assert pos_mid == (1.5, 0.5)
