@@ -27,11 +27,14 @@ namespace RFThreatDetection.Dev
         private ThreatStateData latestState;
         private bool isConnected = false;
         private float offlineProgress = 0f;
+        private string endpointDraft = "ws://127.0.0.1:8000/ws/threats";
+        private string endpointMessage = string.Empty;
 
         private void Awake()
         {
             if (webSocketClient == null) webSocketClient = GetComponent<ThreatWebSocketClient>() ?? FindAnyObjectByType<ThreatWebSocketClient>();
             if (visualizationManager == null) visualizationManager = GetComponent<ThreatVisualizationManager>() ?? FindAnyObjectByType<ThreatVisualizationManager>();
+            if (webSocketClient != null) endpointDraft = webSocketClient.ServerUri;
         }
 
         private void OnEnable()
@@ -86,8 +89,8 @@ namespace RFThreatDetection.Dev
                 sensor_nodes = new SensorNodeData[]
                 {
                     new SensorNodeData("pod_a", 0.0f, 0.0f),
-                    new SensorNodeData("pod_b", 4.0f, 0.0f),
-                    new SensorNodeData("pod_c", 2.0f, 3.5f)
+                    new SensorNodeData("pod_b", 2.0f, 0.0f),
+                    new SensorNodeData("pod_c", 1.0f, Mathf.Sqrt(3f))
                 },
                 threats = new ThreatItemData[]
                 {
@@ -95,9 +98,10 @@ namespace RFThreatDetection.Dev
                     {
                         threat_id = "threat_deadbeef0001",
                         bssid = "DE:AD:BE:EF:00:01",
-                        ssid = "HTN-Secure",
+                        ssid = "AdrianPhone",
                         status = "SUSPICIOUS_INFRASTRUCTURE",
                         risk_score = 100.0f,
+                        filtered_rssi_by_pod = new PodSignalData { pod_a = -38f, pod_b = -44f, pod_c = -48f },
                         evidence_flags = new string[] { "UNKNOWN_BSSID", "SECURITY_MISMATCH", "UNEXPECTED_CHANNEL" },
                         estimated_position_2d = new Position2DData(posX, posY),
                         uncertainty_radius_m = 0.45f,
@@ -116,9 +120,9 @@ namespace RFThreatDetection.Dev
 
         private void OnGUI()
         {
-            if (!showDebugOverlay) return;
+            if (!showDebugOverlay || Application.platform == RuntimePlatform.Android) return;
 
-            GUILayout.BeginArea(new Rect(15, 15, 340, 240), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(15, 15, 430, 340), GUI.skin.box);
             GUILayout.Label("<b><size=14>RF Threat Detection - VR HUD</size></b>");
 
             string statusColor = isConnected ? "green" : (runOfflineSimulation ? "yellow" : "red");
@@ -139,6 +143,27 @@ namespace RFThreatDetection.Dev
                 }
                 GUILayout.Label($"Uncertainty: ±{threat.uncertainty_radius_m:F2}m");
             }
+
+            GUILayout.Space(5);
+            GUILayout.Label("<b>Backend WebSocket</b>");
+            endpointDraft = GUILayout.TextField(endpointDraft);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Apply + Reconnect"))
+            {
+                if (webSocketClient != null && webSocketClient.TrySetServerUri(endpointDraft, true))
+                    endpointMessage = "Saved endpoint.";
+                else
+                    endpointMessage = "Invalid endpoint. Use ws://<laptop-ip>:8000/ws/threats";
+            }
+            if (GUILayout.Button("Editor Localhost"))
+            {
+                endpointDraft = "ws://127.0.0.1:8000/ws/threats";
+                if (webSocketClient != null && webSocketClient.TrySetServerUri(endpointDraft, true))
+                    endpointMessage = "Saved localhost endpoint.";
+            }
+            GUILayout.EndHorizontal();
+            if (!string.IsNullOrEmpty(endpointMessage))
+                GUILayout.Label(endpointMessage);
 
             GUILayout.Space(5);
             GUILayout.BeginHorizontal();

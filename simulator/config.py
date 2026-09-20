@@ -32,8 +32,8 @@ class SimulatorConfig(BaseModel):
     pods: Dict[str, Tuple[float, float]] = Field(
         default_factory=lambda: {
             "pod_a": (0.0, 0.0),
-            "pod_b": (4.0, 0.0),
-            "pod_c": (2.0, 3.5),
+            "pod_b": (2.0, 0.0),
+            "pod_c": (1.0, 1.7320508075688772),
         }
     )
 
@@ -52,8 +52,8 @@ class SimulatorConfig(BaseModel):
             authmode="WPA2_PSK",
             channel=6,
             is_mobile=False,
-            start_pos=(2.0, 1.5),
-            end_pos=(2.0, 1.5),
+            start_pos=(1.0, 0.6),
+            end_pos=(1.0, 0.6),
         )
     )
 
@@ -65,8 +65,8 @@ class SimulatorConfig(BaseModel):
             authmode="OPEN",
             channel=1,
             is_mobile=True,
-            start_pos=(0.5, 0.5),
-            end_pos=(3.5, 2.5),
+            start_pos=(0.3, 0.3),
+            end_pos=(1.5, 0.5),
         )
     )
 

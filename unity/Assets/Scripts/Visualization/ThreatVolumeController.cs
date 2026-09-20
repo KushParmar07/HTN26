@@ -4,40 +4,36 @@ using RFThreatDetection.Models;
 namespace RFThreatDetection.Visualization
 {
     /// <summary>
-    /// Controls the spatial 3D visualization of a single active threat volume in Meta Quest space.
-    /// Manages smooth spatial interpolation, volumetric uncertainty scaling, risk-based visual state,
-    /// and world-space HUD billboard orientation.
+    /// Displays a localized RF source as one translucent 3D orb. Orb size and
+    /// blue-to-green color both represent signal strength. A stable BSSID tint
+    /// makes nearby sources easier to distinguish.
     /// </summary>
     public class ThreatVolumeController : MonoBehaviour
     {
-        [Header("Identity")]
         [SerializeField] private string threatId;
         [SerializeField] private string bssid;
         [SerializeField] private string ssid;
-
-        [Header("Motion & Smoothing")]
-        [Tooltip("Interpolation speed for smooth spatial movement")]
-        [SerializeField] private float positionLerpSpeed = 8.0f;
-        [SerializeField] private float scaleLerpSpeed = 5.0f;
-
-        [Header("Visual Components (Assigned or Procedural)")]
-        [SerializeField] private Transform volumeOuterSphere;
-        [SerializeField] private Transform innerCore;
+        [SerializeField] private float positionLerpSpeed = 8f;
+        [SerializeField] private float scaleLerpSpeed = 6f;
+        [SerializeField] private Transform orbRoot;
+        [SerializeField] private Renderer orbRenderer;
+        [SerializeField] private SphereCollider interactionCollider;
         [SerializeField] private TextMesh billboardText;
 
-        [Header("Color Tuning")]
-        [SerializeField] private Color lowRiskColor = new Color(1.0f, 0.7f, 0.0f, 0.35f);   // Warning Amber
-        [SerializeField] private Color highRiskColor = new Color(1.0f, 0.1f, 0.1f, 0.55f);  // Critical Red
-
+        private readonly Color weakSignalColor = new Color(0.08f, 0.34f, 1f, 0.74f);
+        private readonly Color strongSignalColor = new Color(0.06f, 0.92f, 0.50f, 0.74f);
         private Vector3 targetPosition;
-        private Vector3 targetScale = Vector3.one;
-        private Color currentColor;
-        private Renderer outerRenderer;
-        private Renderer coreRenderer;
-        private float currentRiskScore = 0f;
+        private float targetDiameter = 0.65f;
+        private Color currentColor = Color.blue;
+        private ThreatItemData latestData;
+        private bool isFocused;
+        private bool isSelected;
 
         public string ThreatId => threatId;
         public string Bssid => bssid;
+        public ThreatItemData LatestData => latestData;
+        public float TargetDiameter => targetDiameter;
+        public Vector3 TargetPosition => targetPosition;
 
         private void Awake()
         {
@@ -45,189 +41,147 @@ namespace RFThreatDetection.Visualization
             EnsureVisualComponents();
         }
 
-        /// <summary>
-        /// Update the threat volume with latest data from the backend.
-        /// </summary>
         public void UpdateThreatData(ThreatItemData data, Vector3 worldPosition)
         {
             EnsureVisualComponents();
-            this.threatId = data.threat_id;
-            this.bssid = data.bssid;
-            this.ssid = data.ssid;
-            this.currentRiskScore = data.risk_score;
-            this.targetPosition = worldPosition;
-
-            // Uncertainty radius in meters determines the volumetric diameter
-            float radius = data.uncertainty_radius_m > 0.05f ? data.uncertainty_radius_m : 0.5f;
-            float diameter = radius * 2.0f;
-            this.targetScale = new Vector3(diameter, diameter, diameter);
-
-            // Compute color based on normalized risk (40..100)
-            float t = Mathf.Clamp01((data.risk_score - 40.0f) / 60.0f);
-            this.currentColor = Color.Lerp(lowRiskColor, highRiskColor, t);
-
-            UpdateMaterialColors(currentColor);
+            threatId = data.threat_id;
+            bssid = data.bssid;
+            ssid = data.ssid;
+            latestData = data;
+            targetPosition = worldPosition;
+            // Size and cold-scale color both communicate signal strength.
+            float signalT = Mathf.InverseLerp(-82f, -30f, data.SignalScoreDbm);
+            targetDiameter = Mathf.Lerp(0.34f, 0.92f, signalT);
+            currentColor = Color.Lerp(weakSignalColor, strongSignalColor, signalT);
+            float identityOffset = StableTintOffset(data.bssid);
+            currentColor.g = Mathf.Clamp01(currentColor.g + identityOffset);
+            currentColor.b = Mathf.Clamp01(currentColor.b - identityOffset * 0.65f);
+            RefreshVisualState();
             UpdateBillboardText(data);
+        }
+
+        public void SetFocused(bool focused)
+        {
+            isFocused = focused;
+            if (billboardText != null) billboardText.gameObject.SetActive(focused);
+            RefreshVisualState();
+        }
+
+        public void SetSelected(bool selected)
+        {
+            isSelected = selected;
+            RefreshVisualState();
+            if (latestData != null) UpdateBillboardText(latestData);
         }
 
         private void Update()
         {
-            // Smoothly glide position towards target
-            transform.position = Vector3.Lerp(transform.position, targetPosition, Time.deltaTime * positionLerpSpeed);
-
-            // Smoothly scale outer volume
-            if (volumeOuterSphere != null)
+            transform.position = Vector3.Lerp(
+                transform.position, targetPosition, Time.deltaTime * positionLerpSpeed);
+            if (orbRoot != null)
             {
-                volumeOuterSphere.localScale = Vector3.Lerp(volumeOuterSphere.localScale, targetScale, Time.deltaTime * scaleLerpSpeed);
+                float pulse = 1f + Mathf.Sin(Time.time * 2f) * 0.008f;
+                Vector3 targetScale = Vector3.one * targetDiameter * pulse;
+                orbRoot.localScale = Vector3.Lerp(
+                    orbRoot.localScale, targetScale, Time.deltaTime * scaleLerpSpeed);
             }
-
-            // Pulse the inner core slightly
-            if (innerCore != null)
-            {
-                float pulse = 1.0f + Mathf.Sin(Time.time * 4.0f) * 0.12f;
-                innerCore.localScale = new Vector3(0.2f * pulse, 0.2f * pulse, 0.2f * pulse);
-            }
-
-            // Orient billboard HUD towards the active VR camera
+            if (interactionCollider != null)
+                interactionCollider.radius = Mathf.Max(0.25f, targetDiameter * 0.52f);
+            if (billboardText != null)
+                billboardText.transform.localPosition = new Vector3(
+                    0f, targetDiameter * 0.58f + 0.12f, 0f);
             OrientBillboardToCamera();
+        }
+
+        private void RefreshVisualState()
+        {
+            if (orbRenderer == null) return;
+            Color visual = currentColor;
+            if (isSelected)
+                visual = Color.Lerp(visual, Color.white, 0.28f);
+            else if (isFocused)
+                visual = Color.Lerp(visual, new Color(1f, 0.9f, 0.25f, 1f), 0.22f);
+            visual.a = isSelected || isFocused ? 0.86f : 0.74f;
+            if (orbRenderer.material.HasProperty("_Color"))
+                orbRenderer.material.SetColor("_Color", visual);
+        }
+
+        private static float StableTintOffset(string identity)
+        {
+            unchecked
+            {
+                int hash = 17;
+                foreach (char character in identity ?? string.Empty)
+                    hash = hash * 31 + character;
+                return (((hash & 255) / 255f) - 0.5f) * 0.12f;
+            }
+        }
+
+        private void EnsureVisualComponents()
+        {
+            Shader solidShader = Resources.Load<Shader>("Shaders/SolidUnlit");
+            if (solidShader == null) solidShader = Shader.Find("RFThreat/SolidUnlit");
+            if (orbRoot == null)
+            {
+                GameObject orb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                orb.name = "ThreatOrb";
+                orb.transform.SetParent(transform, false);
+                orbRoot = orb.transform;
+                orbRenderer = orb.GetComponent<Renderer>();
+                if (solidShader != null) orbRenderer.material = new Material(solidShader);
+                SafeDestroy(orb.GetComponent<Collider>());
+            }
+            if (interactionCollider == null)
+            {
+                interactionCollider = GetComponent<SphereCollider>();
+                if (interactionCollider == null)
+                    interactionCollider = gameObject.AddComponent<SphereCollider>();
+                interactionCollider.isTrigger = true;
+                interactionCollider.radius = 0.35f;
+            }
+            if (billboardText == null)
+            {
+                GameObject label = new GameObject("ThreatLabel");
+                label.transform.SetParent(transform, false);
+                billboardText = label.AddComponent<TextMesh>();
+                billboardText.fontSize = 32;
+                billboardText.characterSize = 0.019f;
+                billboardText.anchor = TextAnchor.MiddleCenter;
+                billboardText.alignment = TextAlignment.Center;
+                billboardText.color = Color.white;
+                billboardText.richText = true;
+                billboardText.gameObject.SetActive(false);
+            }
+            RefreshVisualState();
         }
 
         private void OrientBillboardToCamera()
         {
-            Camera mainCam = Camera.main;
-            if (mainCam != null && billboardText != null)
-            {
-                billboardText.transform.LookAt(billboardText.transform.position + mainCam.transform.rotation * Vector3.forward,
-                                              mainCam.transform.rotation * Vector3.up);
-            }
+            Camera mainCamera = Camera.main;
+            if (mainCamera == null || billboardText == null) return;
+            billboardText.transform.LookAt(
+                billboardText.transform.position + mainCamera.transform.rotation * Vector3.forward,
+                mainCamera.transform.rotation * Vector3.up);
         }
 
         private void UpdateBillboardText(ThreatItemData data)
         {
             if (billboardText == null) return;
-
-            string flags = data.GetFormattedEvidenceFlags();
-            billboardText.text = $"<b><color=red>[THREAT DETECTED]</color></b>\n" +
-                                 $"<b>SSID:</b> {data.ssid}\n" +
-                                 $"<b>BSSID:</b> {data.bssid}\n" +
-                                 $"<b>Risk:</b> {data.risk_score:F0}%\n" +
-                                 $"<b>Flags:</b> {flags}\n" +
-                                 $"<b>Uncertainty:</b> ±{data.uncertainty_radius_m:F2}m";
+            billboardText.gameObject.SetActive(isFocused);
+            string safeSsid = (data.ssid ?? "Hidden network")
+                .Replace("<", "").Replace(">", "").Replace("\n", " ");
+            if (safeSsid.Length > 28) safeSsid = safeSsid.Substring(0, 25) + "...";
+            string selectedMarker = isSelected ? "  [SELECTED]" : string.Empty;
+            string labelColor = data.SignalScoreDbm >= -55f ? "#68F0A6" : "#77D9FF";
+            billboardText.text = $"<b><color={labelColor}>{safeSsid}</color></b>{selectedMarker}\n" +
+                                 $"SIGNAL {data.SignalScoreDbm:F0} dBm   POSITION {data.GetPositionConfidence()}";
         }
 
-        private void UpdateMaterialColors(Color color)
-        {
-            if (outerRenderer != null)
-            {
-                outerRenderer.material.color = color;
-            }
-            if (coreRenderer != null)
-            {
-                Color solid = color;
-                solid.a = 1.0f;
-                coreRenderer.material.color = solid;
-            }
-        }
-
-        private void SetMaterialTransparent(Material mat)
-        {
-            if (mat == null) return;
-            if (mat.HasProperty("_Mode"))
-            {
-                mat.SetFloat("_Mode", 3); // 3 = Transparent in Unity Standard Shader
-            }
-            if (mat.HasProperty("_Surface"))
-            {
-                mat.SetFloat("_Surface", 1); // 1 = Transparent in URP Lit
-            }
-            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            mat.SetInt("_ZWrite", 0);
-            mat.DisableKeyword("_ALPHATEST_ON");
-            mat.EnableKeyword("_ALPHABLEND_ON");
-            mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
-            mat.renderQueue = 3000;
-        }
-
-        /// <summary>
-        /// Create procedural visual primitives if prefabs were not pre-configured.
-        /// </summary>
-        private void EnsureVisualComponents()
-        {
-            if (volumeOuterSphere == null)
-            {
-                GameObject outer = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                outer.name = "VolumeCloud";
-                outer.transform.SetParent(this.transform, false);
-                outer.transform.localPosition = Vector3.zero;
-                Collider col = outer.GetComponent<Collider>();
-                SafeDestroy(col);
-
-                outerRenderer = outer.GetComponent<Renderer>();
-                if (outerRenderer != null)
-                {
-                    Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-                    if (shader == null) shader = Shader.Find("Standard");
-                    if (shader == null) shader = Shader.Find("Sprites/Default");
-                    Material mat = new Material(shader);
-                    SetMaterialTransparent(mat);
-                    outerRenderer.material = mat;
-                }
-                volumeOuterSphere = outer.transform;
-            }
-            else
-            {
-                outerRenderer = volumeOuterSphere.GetComponent<Renderer>();
-                if (outerRenderer != null)
-                {
-                    SetMaterialTransparent(outerRenderer.material);
-                }
-            }
-
-            if (innerCore == null)
-            {
-                GameObject core = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                core.name = "ThreatCore";
-                core.transform.SetParent(this.transform, false);
-                core.transform.localPosition = Vector3.zero;
-                core.transform.localScale = new Vector3(0.2f, 0.2f, 0.2f);
-                Collider col = core.GetComponent<Collider>();
-                SafeDestroy(col);
-
-                coreRenderer = core.GetComponent<Renderer>();
-                innerCore = core.transform;
-            }
-            else
-            {
-                coreRenderer = innerCore.GetComponent<Renderer>();
-            }
-
-            if (billboardText == null)
-            {
-                GameObject textObj = new GameObject("ThreatHUD");
-                textObj.transform.SetParent(this.transform, false);
-                textObj.transform.localPosition = new Vector3(0f, 0.65f, 0f);
-
-                billboardText = textObj.AddComponent<TextMesh>();
-                billboardText.fontSize = 24;
-                billboardText.characterSize = 0.035f;
-                billboardText.anchor = TextAnchor.LowerCenter;
-                billboardText.alignment = TextAlignment.Center;
-                billboardText.color = Color.white;
-            }
-        }
-
-        private static void SafeDestroy(UnityEngine.Object obj)
+        private static void SafeDestroy(Object obj)
         {
             if (obj == null) return;
-            if (Application.isPlaying)
-            {
-                Destroy(obj);
-            }
-            else
-            {
-                DestroyImmediate(obj);
-            }
+            if (Application.isPlaying) Destroy(obj);
+            else DestroyImmediate(obj);
         }
     }
 }

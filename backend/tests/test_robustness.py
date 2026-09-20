@@ -443,7 +443,7 @@ def test_pod_connect_disconnect_reconnect_and_pod_transitions(clean_pipeline):
     assert threat.uncertainty_radius_m is not None
     assert threat.uncertainty_radius_m >= 0.3
 
-    # Step 4: Pod C disconnects (no data from Pod C for 12 seconds > max_age_ms of 10s)
+    # Step 4: Pod C disconnects (no data beyond the configured 20s pod window)
     clean_pipeline.ingest(
         PodObservationBatch(
             pod_id="pod_a",
@@ -459,7 +459,7 @@ def test_pod_connect_disconnect_reconnect_and_pod_transitions(clean_pipeline):
         received_at_ms=base_time + 15000,
     )
     # Beyond 15s spatial TTL, estimated position clears cleanly
-    state = clean_pipeline.generate_threat_state(current_time_ms=base_time + 20000)
+    state = clean_pipeline.generate_threat_state(current_time_ms=base_time + 23001)
     threat = state.threats[0]
     assert "pod_c" not in threat.observed_by_pods
     assert threat.estimated_position_2d is None
@@ -471,9 +471,9 @@ def test_pod_connect_disconnect_reconnect_and_pod_transitions(clean_pipeline):
             pod_id="pod_c",
             observations=[SingleObservation(bssid=bssid, ssid=ssid, rssi=-55, channel=1)],
         ),
-        received_at_ms=base_time + 22000,
+        received_at_ms=base_time + 24000,
     )
-    state = clean_pipeline.generate_threat_state(current_time_ms=base_time + 22000)
+    state = clean_pipeline.generate_threat_state(current_time_ms=base_time + 24000)
     threat = state.threats[0]
     assert "pod_c" in threat.observed_by_pods
     assert threat.estimated_position_2d is not None

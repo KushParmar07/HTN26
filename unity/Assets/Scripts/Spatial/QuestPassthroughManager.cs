@@ -1,4 +1,7 @@
+using System;
+using System.Reflection;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace RFThreatDetection.Spatial
 {
@@ -28,6 +31,8 @@ namespace RFThreatDetection.Spatial
         private bool isPassthroughActive;
         private CameraClearFlags defaultClearFlags;
         private Color defaultBgColor;
+        private Behaviour metaPassthroughLayer;
+        private Behaviour metaOvrManager;
 
         public bool IsPassthroughActive
         {
@@ -62,7 +67,7 @@ namespace RFThreatDetection.Spatial
 
         private void Update()
         {
-            if (enableKeyboardShortcut && Input.GetKeyDown(KeyCode.P))
+            if (enableKeyboardShortcut && Keyboard.current != null && Keyboard.current.pKey.wasPressedThisFrame)
             {
                 TogglePassthrough();
             }
@@ -81,6 +86,7 @@ namespace RFThreatDetection.Spatial
 
             targetCamera.clearFlags = CameraClearFlags.SolidColor;
             targetCamera.backgroundColor = new Color(0f, 0f, 0f, 0f);
+            TrySetMetaPassthrough(true);
             isPassthroughActive = true;
 
             Debug.Log("[QuestPassthroughManager] Passthrough ENABLED: Camera background set to RGBA(0, 0, 0, 0).");
@@ -99,6 +105,7 @@ namespace RFThreatDetection.Spatial
 
             targetCamera.clearFlags = CameraClearFlags.SolidColor;
             targetCamera.backgroundColor = voidBackgroundColor;
+            TrySetMetaPassthrough(false);
             isPassthroughActive = false;
 
             Debug.Log("[QuestPassthroughManager] Passthrough DISABLED: Camera background set to dark void.");
@@ -117,6 +124,83 @@ namespace RFThreatDetection.Spatial
             {
                 EnablePassthrough();
             }
+        }
+
+        private void TrySetMetaPassthrough(bool enabled)
+        {
+            Type managerType = FindType("OVRManager");
+            Type layerType = FindType("OVRPassthroughLayer");
+
+            if (managerType == null || layerType == null)
+            {
+                if (enabled)
+                    Debug.LogWarning("[QuestPassthroughManager] Camera is transparent, but Meta XR Core SDK is not installed. Install it to render physical-room passthrough on Quest.");
+                return;
+            }
+
+            PropertyInfo passthroughProperty = managerType.GetProperty(
+                "isInsightPassthroughEnabled",
+                BindingFlags.Public | BindingFlags.Static);
+            passthroughProperty?.SetValue(null, enabled);
+
+            EnsureMetaOvrManager(managerType, enabled);
+
+            if (metaPassthroughLayer == null)
+            {
+                metaPassthroughLayer = GetComponent(layerType) as Behaviour;
+                if (metaPassthroughLayer == null)
+                    metaPassthroughLayer = gameObject.AddComponent(layerType) as Behaviour;
+            }
+
+            if (metaPassthroughLayer != null)
+            {
+                metaPassthroughLayer.enabled = enabled;
+                SetMember(layerType, metaPassthroughLayer, "hidden", !enabled);
+                SetMember(layerType, metaPassthroughLayer, "textureOpacity", enabled ? 1f : 0f);
+                SetMember(layerType, metaPassthroughLayer, "edgeRenderingEnabled", false);
+            }
+        }
+
+        private void EnsureMetaOvrManager(Type managerType, bool enabled)
+        {
+            if (metaOvrManager == null)
+            {
+                metaOvrManager = GetComponent(managerType) as Behaviour;
+                if (metaOvrManager == null)
+                    metaOvrManager = gameObject.AddComponent(managerType) as Behaviour;
+            }
+
+            if (metaOvrManager == null) return;
+
+            metaOvrManager.enabled = true;
+            SetMember(managerType, metaOvrManager, "isInsightPassthroughEnabled", enabled);
+            SetMember(managerType, metaOvrManager, "SimultaneousHandsAndControllersEnabled", true);
+            SetMember(managerType, metaOvrManager, "shouldBoundaryVisibilityBeSuppressed", false);
+        }
+
+        private static void SetMember(Type type, object instance, string memberName, object value)
+        {
+            FieldInfo field = type.GetField(memberName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
+            if (field != null)
+            {
+                field.SetValue(field.IsStatic ? null : instance, value);
+                return;
+            }
+
+            PropertyInfo property = type.GetProperty(memberName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
+            if (property != null && property.CanWrite)
+                property.SetValue(property.GetGetMethod()?.IsStatic == true ? null : instance, value);
+        }
+
+        private static Type FindType(string typeName)
+        {
+            string[] likelyAssemblies = { "Oculus.VR", "Meta.XR.SDK.Core" };
+            foreach (string assemblyName in likelyAssemblies)
+            {
+                Type type = Type.GetType($"{typeName}, {assemblyName}", false);
+                if (type != null) return type;
+            }
+            return null;
         }
     }
 }

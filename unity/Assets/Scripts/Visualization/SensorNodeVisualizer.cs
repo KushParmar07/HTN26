@@ -21,11 +21,34 @@ namespace RFThreatDetection.Visualization
 
         private readonly Dictionary<string, GameObject> podObjects = new Dictionary<string, GameObject>();
         private LineRenderer boundaryRenderer;
+        private SensorNodeData[] latestNodes = {
+            new SensorNodeData("pod_a", 0f, 0f),
+            new SensorNodeData("pod_b", 2f, 0f),
+            new SensorNodeData("pod_c", 1f, Mathf.Sqrt(3f))
+        };
+        private readonly Dictionary<string, Vector3> placementPreviews = new Dictionary<string, Vector3>();
+
+        public void SetPlacementPreview(int index, Vector3 floorPosition)
+        {
+            placementPreviews["pod_" + (char)('a' + index)] = floorPosition + Vector3.up * 0.05f;
+            UpdateSensorNodes(latestNodes);
+        }
+
+        public void ClearPlacementPreviews()
+        {
+            placementPreviews.Clear();
+            UpdateSensorNodes(latestNodes);
+        }
+
+        private void LateUpdate()
+        {
+            // Calibration must remain responsive even without backend messages.
+            UpdateSensorNodes(latestNodes);
+        }
 
         private void Awake()
         {
             EnsureTransformer();
-            EnsureBoundaryLineRenderer();
         }
 
         private void EnsureTransformer()
@@ -45,11 +68,17 @@ namespace RFThreatDetection.Visualization
             EnsureTransformer();
             if (nodes == null || nodes.Length == 0 || transformer == null) return;
 
+            latestNodes = nodes;
+            EnsureBoundaryLineRenderer();
             List<Vector3> worldPositions = new List<Vector3>();
 
             foreach (var node in nodes)
             {
-                Vector3 worldPos = transformer.TransformSensorNode(node.x, node.y);
+                // Keep the room footprint on the physical floor so the wearer stands
+                // inside the triangle instead of looking through a floating wireframe.
+                Vector3 worldPos = transformer.TransformSensorNode(node.x, node.y, 0.05f);
+                bool preview = placementPreviews.TryGetValue(node.pod_id, out Vector3 placed);
+                if (preview) worldPos = placed;
                 worldPositions.Add(worldPos);
 
                 if (!podObjects.TryGetValue(node.pod_id, out GameObject podObj))
@@ -59,6 +88,8 @@ namespace RFThreatDetection.Visualization
                 }
 
                 podObj.transform.position = worldPos;
+                SetMaterialColor(podObj.GetComponent<Renderer>().material,
+                    preview ? new Color(1f, 0.76f, 0.18f, 1f) : nodeColor);
             }
 
             UpdateBoundaryLines(worldPositions);
@@ -66,6 +97,10 @@ namespace RFThreatDetection.Visualization
 
         private GameObject CreatePodMarker(string podId)
         {
+            Transform existing = transform.Find($"SensorNode_{podId}");
+            if (existing != null)
+                return existing.gameObject;
+
             GameObject pod = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             pod.name = $"SensorNode_{podId}";
             pod.transform.SetParent(this.transform, false);
@@ -77,7 +112,10 @@ namespace RFThreatDetection.Visualization
             Renderer r = pod.GetComponent<Renderer>();
             if (r != null)
             {
-                r.material.color = nodeColor;
+                Shader shader = Resources.Load<Shader>("Shaders/SolidUnlit");
+                if (shader == null) shader = Shader.Find("RFThreat/SolidUnlit");
+                if (shader != null) r.material = new Material(shader);
+                SetMaterialColor(r.material, nodeColor);
             }
 
             // Add label above pod
@@ -100,14 +138,26 @@ namespace RFThreatDetection.Visualization
         {
             if (boundaryRenderer == null)
             {
-                boundaryRenderer = gameObject.AddComponent<LineRenderer>();
+                boundaryRenderer = GetComponent<LineRenderer>();
+                if (boundaryRenderer == null)
+                    boundaryRenderer = gameObject.AddComponent<LineRenderer>();
+                if (boundaryRenderer == null) return;
                 boundaryRenderer.loop = true;
                 boundaryRenderer.startWidth = 0.02f;
                 boundaryRenderer.endWidth = 0.02f;
-                boundaryRenderer.material = new Material(Shader.Find("Sprites/Default"));
+                Shader shader = Resources.Load<Shader>("Shaders/SolidUnlit");
+                if (shader == null) shader = Shader.Find("RFThreat/SolidUnlit");
+                if (shader != null) boundaryRenderer.material = new Material(shader);
+                SetMaterialColor(boundaryRenderer.material, boundaryLineColor);
                 boundaryRenderer.startColor = boundaryLineColor;
                 boundaryRenderer.endColor = boundaryLineColor;
             }
+        }
+
+        private static void SetMaterialColor(Material material, Color color)
+        {
+            if (material == null) return;
+            if (material.HasProperty("_Color")) material.SetColor("_Color", color);
         }
 
         private void UpdateBoundaryLines(List<Vector3> positions)

@@ -95,3 +95,24 @@ def test_insufficient_sensor_observations():
     pos, uncertainty = solver.solve({"pod_a": -50.0, "pod_b": -55.0})
     assert pos is None
     assert uncertainty is None
+
+
+def test_inconsistent_real_phone_rssi_stays_inside_compact_triangle():
+    sensors = [
+        SensorNodeConfig(pod_id="pod_a", x=0.0, y=0.0),
+        SensorNodeConfig(pod_id="pod_b", x=2.0, y=0.0),
+        SensorNodeConfig(pod_id="pod_c", x=1.0, y=np.sqrt(3.0)),
+    ]
+    solver = MultilaterationSolver2D(sensors)
+
+    # Live AdrianPhone sample: absolute path-loss distances conflict, but the
+    # relative readings clearly place the phone closest to Pod A.
+    pos, uncertainty = solver.solve(
+        {"pod_a": -35.82, "pod_b": -64.94, "pod_c": -57.35}
+    )
+
+    assert pos is not None
+    assert 0.0 <= pos.x <= 2.0
+    assert 0.0 <= pos.y <= np.sqrt(3.0)
+    assert pos.x < 0.5 and pos.y < 0.5
+    assert uncertainty is not None and uncertainty < 1.5

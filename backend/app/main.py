@@ -127,7 +127,10 @@ def get_aps() -> List[Dict[str, Any]]:
                 "first_seen_ms": ap.first_seen_ms,
                 "last_seen_ms": ap.last_seen_ms,
                 "observation_count": ap.observation_count,
-                "active_pods": ap.get_active_pods(now_ms=now_ms),
+                "active_pods": ap.get_active_pods(
+                    now_ms=now_ms,
+                    max_age_ms=pipeline.config.active_pod_window_ms,
+                ),
                 "filtered_rssi": {
                     pod_id: ap.get_filtered_rssi(pod_id) for pod_id in ap.pod_filters
                 },
