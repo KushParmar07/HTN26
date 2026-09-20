@@ -151,3 +151,54 @@ def test_multiple_sensors_and_strong_signal():
     )
     assert EvidenceFlag.MULTIPLE_SENSORS in flags
     assert EvidenceFlag.STRONG_SIGNAL in flags
+
+
+def test_adrian_phone_evil_twin_scenario():
+    """Verify live demo configuration: legitimate AdrianPhone hotspot + rogue ESP32 clone."""
+    auth_config = AuthorizedNetworkConfig(
+        ssid="AdrianPhone",
+        authorized_bssids={"12:34:56:78:9A:BC"},
+        expected_authmode="WPA2_PSK",
+        expected_channels={6},
+    )
+    detector = DeterministicDetector(
+        authorized=auth_config,
+        weights=DetectionWeights(),
+        suspicious_threshold=40.0,
+    )
+
+    legit_phone = APState(
+        bssid="12:34:56:78:9A:BC",
+        ssid="AdrianPhone",
+        initial_seen_ms=1000,
+        channel=6,
+        authmode="WPA2_PSK",
+    )
+    rogue_esp32 = APState(
+        bssid="D8:13:2A:38:76:35",
+        ssid="AdrianPhone",
+        initial_seen_ms=2000,
+        channel=6,
+        authmode="OPEN",
+    )
+
+    all_aps = [legit_phone, rogue_esp32]
+
+    # Evaluate legitimate phone
+    legit_status, legit_risk, legit_flags = detector.evaluate(
+        legit_phone, current_time_ms=5000, all_aps=all_aps
+    )
+    assert legit_status == ThreatStatus.AUTHORIZED
+    assert legit_risk == 0.0
+    assert len(legit_flags) == 0
+
+    # Evaluate rogue ESP32
+    rogue_status, rogue_risk, rogue_flags = detector.evaluate(
+        rogue_esp32, current_time_ms=5000, all_aps=all_aps
+    )
+    assert rogue_status == ThreatStatus.SUSPICIOUS_INFRASTRUCTURE
+    assert rogue_risk >= 75.0
+    assert EvidenceFlag.UNKNOWN_BSSID in rogue_flags
+    assert EvidenceFlag.DUPLICATE_SSID in rogue_flags
+    assert EvidenceFlag.SECURITY_MISMATCH in rogue_flags
+

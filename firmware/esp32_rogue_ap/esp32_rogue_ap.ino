@@ -10,7 +10,7 @@
 // =============================================================================
 
 // Default AP configuration
-String apSSID = "CorpNet-Secure";
+String apSSID = "AdrianPhone";
 String apPassword = ""; // Empty string = OPEN network
 int apChannel = 6;
 bool apRunning = false;

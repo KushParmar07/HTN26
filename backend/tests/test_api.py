@@ -89,3 +89,21 @@ def test_ingest_and_threats_flow():
     aps_data = res_aps.json()
     assert len(aps_data) == 1
     assert aps_data[0]["bssid"] == "DE:AD:BE:EF:00:01"
+
+
+def test_authorize_bssid_endpoint():
+    """Verify dynamic BSSID authorization endpoint."""
+    res_get = client.get("/api/authorize_bssid")
+    assert res_get.status_code == 200
+    data = res_get.json()
+    assert "authorized_bssids" in data
+
+    res_post = client.post(
+        "/api/authorize_bssid",
+        json={"bssid": "aa:bb:cc:dd:ee:ff", "ssid": "AdrianPhone"},
+    )
+    assert res_post.status_code == 200
+    res_data = res_post.json()
+    assert "AA:BB:CC:DD:EE:FF" in res_data["authorized_bssids"]
+    assert res_data["ssid"] == "AdrianPhone"
+

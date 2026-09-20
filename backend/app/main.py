@@ -4,9 +4,10 @@ import asyncio
 from contextlib import asynccontextmanager
 import json
 import time
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from backend.app.config import DEFAULT_CONFIG
 from backend.app.models.observation import PodObservationBatch
@@ -143,6 +144,39 @@ def get_aps() -> List[Dict[str, Any]]:
             }
         )
     return records
+
+
+class AuthorizeBssidRequest(BaseModel):
+    bssid: str
+    ssid: Optional[str] = "AdrianPhone"
+
+
+@app.post("/api/authorize_bssid", tags=["Operational"])
+async def authorize_bssid(req: AuthorizeBssidRequest) -> Dict[str, Any]:
+    """Dynamically authorize a known BSSID (e.g. legitimate phone hotspot)."""
+    clean_bssid = req.bssid.strip().upper()
+    pipeline.config.authorized_network.authorized_bssids.add(clean_bssid)
+    if req.ssid:
+        pipeline.config.authorized_network.ssid = req.ssid
+        if hasattr(pipeline.config.authorized_network, "allowed_ssids"):
+            pipeline.config.authorized_network.allowed_ssids.add(req.ssid)
+    pipeline.detector.authorized = pipeline.config.authorized_network
+    await broadcast_threat_state()
+    return {
+        "status": "ok",
+        "authorized_bssids": sorted(list(pipeline.config.authorized_network.authorized_bssids)),
+        "ssid": pipeline.config.authorized_network.ssid,
+    }
+
+
+@app.get("/api/authorize_bssid", tags=["Operational"])
+def get_authorized_bssids() -> Dict[str, Any]:
+    """Return currently authorized baseline BSSIDs and target SSID."""
+    return {
+        "authorized_bssids": sorted(list(pipeline.config.authorized_network.authorized_bssids)),
+        "ssid": pipeline.config.authorized_network.ssid,
+    }
+
 
 
 @app.websocket("/ws/threats")

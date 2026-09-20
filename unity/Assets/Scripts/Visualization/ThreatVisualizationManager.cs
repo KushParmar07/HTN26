@@ -125,6 +125,18 @@ namespace RFThreatDetection.Visualization
                     UpdateVisibleSource(threatData);
             }
 
+            if (ThreatStateData.FocusTargetOnly)
+            {
+                var nonTargets = new List<string>();
+                foreach (var kvp in activeThreats)
+                {
+                    if (!string.Equals(kvp.Value?.LatestData?.ssid, ThreatStateData.DemoTargetSsid, System.StringComparison.OrdinalIgnoreCase))
+                        nonTargets.Add(kvp.Key);
+                }
+                foreach (var id in nonTargets)
+                    RemoveVisibleSource(id, "non-target hidden in demo mode");
+            }
+
             // Fill empty slots using the strongest currently reported sources.
             foreach (var threatData in incomingThreats)
             {
@@ -133,16 +145,26 @@ namespace RFThreatDetection.Visualization
                     UpdateVisibleSource(threatData);
             }
 
-            // Only replace a visible source when a newcomer is at least 5 dB stronger.
-            // This hysteresis keeps the display stable around close RSSI rankings.
+            // Only replace a visible source when a newcomer is at least 5 dB stronger,
+            // UNLESS newcomer is our demo target (AdrianPhone) replacing an ambient network.
             foreach (var threatData in incomingThreats)
             {
                 if (activeThreats.ContainsKey(threatData.threat_id)) continue;
                 string weakestId = FindWeakestVisibleSource();
                 if (string.IsNullOrEmpty(weakestId)) break;
-                float weakestDbm = activeThreats[weakestId].LatestData?.SignalScoreDbm ?? -127f;
-                if (threatData.SignalScoreDbm < weakestDbm + replacementMarginDb) break;
-                RemoveVisibleSource(weakestId, "replaced by stronger source");
+
+                bool newcomerIsTarget = string.Equals(threatData.ssid, ThreatStateData.DemoTargetSsid, System.StringComparison.OrdinalIgnoreCase);
+                bool weakestIsTarget = string.Equals(activeThreats[weakestId].LatestData?.ssid, ThreatStateData.DemoTargetSsid, System.StringComparison.OrdinalIgnoreCase);
+
+                if (!newcomerIsTarget && weakestIsTarget) continue;
+
+                if (!newcomerIsTarget)
+                {
+                    float weakestDbm = activeThreats[weakestId].LatestData?.SignalScoreDbm ?? -127f;
+                    if (threatData.SignalScoreDbm < weakestDbm + replacementMarginDb) break;
+                }
+
+                RemoveVisibleSource(weakestId, newcomerIsTarget ? "replaced by demo target" : "replaced by stronger source");
                 UpdateVisibleSource(threatData);
             }
         }

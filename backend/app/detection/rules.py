@@ -35,13 +35,19 @@ class DeterministicDetector:
         flags: List[EvidenceFlag] = []
         raw_score = 0.0
 
-        is_matching_ssid = (ap.ssid == self.authorized.ssid) and (ap.ssid != "")
-        is_known_bssid = ap.bssid in self.authorized.authorized_bssids
+        matching_ssids = getattr(self.authorized, "allowed_ssids", {self.authorized.ssid})
+        is_matching_ssid = (ap.ssid == self.authorized.ssid or ap.ssid in matching_ssids) and (ap.ssid != "")
+        normalized_authorized_bssids = {b.upper() for b in self.authorized.authorized_bssids}
+        is_known_bssid = ap.bssid.upper() in normalized_authorized_bssids
 
         # If it is the legitimate AP (correct SSID and known BSSID)
         if is_matching_ssid and is_known_bssid:
             # Check for sudden configuration tampering on known BSSID
-            if ap.authmode != self.authorized.expected_authmode and ap.authmode != "UNKNOWN":
+            if (
+                ap.authmode in ("OPEN", "NONE", "")
+                and self.authorized.expected_authmode not in ("OPEN", "NONE", "")
+                and ap.authmode != "UNKNOWN"
+            ):
                 flags.append(EvidenceFlag.SECURITY_MISMATCH)
                 raw_score += self.weights.security_mismatch
 
@@ -61,7 +67,7 @@ class DeterministicDetector:
         is_duplicate_ssid = False
         if ap.ssid and all_aps:
             for other in all_aps:
-                if other.bssid != ap.bssid and other.ssid == ap.ssid:
+                if other.bssid.upper() != ap.bssid.upper() and other.ssid.strip().lower() == ap.ssid.strip().lower():
                     is_duplicate_ssid = True
                     break
 

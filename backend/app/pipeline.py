@@ -139,3 +139,10 @@ class BackendPipeline:
     def reset(self) -> None:
         """Clear all active AP states and threat histories."""
         self.state_manager.aps.clear()
+        if hasattr(self.config.authorized_network, "get_default_authorized_bssids"):
+            self.config.authorized_network.authorized_bssids = set(
+                self.config.authorized_network.get_default_authorized_bssids()
+            )
+        else:
+            self.config.authorized_network.authorized_bssids = {"00:11:22:33:44:55"}
+        self.detector.authorized = self.config.authorized_network

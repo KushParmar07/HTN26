@@ -150,6 +150,14 @@ namespace RFThreatDetection.Models
             }
             var near = new System.Collections.Generic.List<ThreatItemData>(byRadio.Values);
             near.Sort((a, b) => {
+                bool aIsTarget = string.Equals(a.ssid, DemoTargetSsid, StringComparison.OrdinalIgnoreCase);
+                bool bIsTarget = string.Equals(b.ssid, DemoTargetSsid, StringComparison.OrdinalIgnoreCase);
+                if (aIsTarget != bIsTarget) return aIsTarget ? -1 : 1;
+
+                bool aIsThreat = !a.isBelowThreshold;
+                bool bIsThreat = !b.isBelowThreshold;
+                if (aIsThreat != bIsThreat) return aIsThreat ? -1 : 1;
+
                 int order = b.SignalScoreDbm.CompareTo(a.SignalScoreDbm);
                 return order != 0 ? order : string.CompareOrdinal(a.threat_id, b.threat_id);
             });
@@ -162,7 +170,7 @@ namespace RFThreatDetection.Models
             foreach (var item in GetVisibleSources())
             {
                 if (item == null || IsIgnoredInfrastructure(item)) continue;
-                if (FocusTargetOnly && !string.Equals(item.ssid, DemoTargetSsid, StringComparison.Ordinal)) continue;
+                if (FocusTargetOnly && !string.Equals(item.ssid, DemoTargetSsid, StringComparison.OrdinalIgnoreCase)) continue;
                 present.Add(item);
             }
             return present.ToArray();

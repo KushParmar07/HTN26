@@ -1,6 +1,26 @@
+import os
 from enum import Enum
 from typing import List, Optional, Set
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+
+load_dotenv()
+
+
+def _get_default_authorized_bssids() -> Set[str]:
+    env_val = os.getenv("AUTHORIZED_BSSIDS", "")
+    bssids = {b.strip().upper() for b in env_val.split(",") if b.strip()}
+    bssids.add("00:11:22:33:44:55")
+    return bssids
+
+
+def _get_default_authorized_ssid() -> str:
+    return os.getenv("AUTHORIZED_SSID", "AdrianPhone")
+
+
+def _get_default_allowed_ssids() -> Set[str]:
+    primary = _get_default_authorized_ssid()
+    return {primary, "HTN-Secure", "AdrianPhone"}
 
 
 class SensorNodeType(str, Enum):
@@ -20,13 +40,23 @@ class SensorNodeConfig(BaseModel):
     enabled: bool = True
 
 
+def _get_default_expected_channels() -> Set[int]:
+    env_val = os.getenv("EXPECTED_CHANNELS", "6")
+    return {int(c.strip()) for c in env_val.split(",") if c.strip().isdigit()}
+
+
 class AuthorizedNetworkConfig(BaseModel):
     """Authorized baseline network specification."""
 
-    ssid: str = "HTN-Secure"
-    authorized_bssids: Set[str] = {"00:11:22:33:44:55"}
+    ssid: str = Field(default_factory=_get_default_authorized_ssid)
+    allowed_ssids: Set[str] = Field(default_factory=_get_default_allowed_ssids)
+    authorized_bssids: Set[str] = Field(default_factory=_get_default_authorized_bssids)
     expected_authmode: str = "WPA2_PSK"
-    expected_channels: Set[int] = {6}
+    expected_channels: Set[int] = Field(default_factory=_get_default_expected_channels)
+
+    @staticmethod
+    def get_default_authorized_bssids() -> Set[str]:
+        return _get_default_authorized_bssids()
 
 
 class DetectionWeights(BaseModel):

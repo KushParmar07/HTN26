@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from scipy.optimize import least_squares
 from scipy.spatial import ConvexHull, QhullError
-from backend.app.config import SensorNodeConfig
+from backend.app.config import SensorNodeConfig, SensorNodeType
 from backend.app.models.threat import Position2D
 
 
